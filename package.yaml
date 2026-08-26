@@ -38,8 +38,8 @@ dependencies:
   - megaparsec
 
 executables:
-  implicit:
+  comptt:
     main: Main.hs
-    source-dirs: implicit
+    source-dirs: src
     ghc-options:
       - -O

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-IMPL=$(stack exec which implicit)
+IMPL=$(stack exec which comptt)
 
 PASS=0
 FAIL=0
