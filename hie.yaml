@@ -1,6 +1,4 @@
 cradle:
   stack:
-    - path: "./explicit"
-      component: "comptt-impl:exe:explicit"
     - path: "./implicit"
       component: "comptt-impl:exe:implicit"
