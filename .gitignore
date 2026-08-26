@@ -48,3 +48,6 @@ hie.yaml.local
 
 # Output binaries
 comptt-impl
+
+# Other
+ignored/
