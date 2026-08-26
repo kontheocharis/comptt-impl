@@ -9,6 +9,7 @@ import Evaluation
 import Extraction (extract)
 import Metacontext
 import Parser
+import Staging (quoteO, stage)
 import qualified Presyntax as P
 import Pretty
 import System.Environment
@@ -21,6 +22,7 @@ helpMsg =
     [ "usage: comptt-impl [--help|elab|nf|type]",
       "  --help : display this message",
       "  elab   : read & elaborate expression from stdin",
+      "  stage  : read & typecheck expression from stdin, print its staged form",
       "  nf     : read & typecheck expression from stdin, print its normal form and type",
       "  type   : read & typecheck expression from stdin, print its type"
     ]
@@ -32,6 +34,11 @@ mainWith getOpt getRaw = do
   (t, file) <- getRaw
   let elab m = do
         inferIn (emptyCxt (initialPos file)) SObj m t
+          `catch` \e -> (displayError file e >> exitFailure)
+
+  let staged m = do
+        (t, _) <- elab m
+        stage (initialPos file) t
           `catch` \e -> (displayError file e >> exitFailure)
 
   let parseMode "0" = pure Zero
@@ -57,9 +64,11 @@ mainWith getOpt getRaw = do
       displayMetas
       putStrLn $ showTm0 t
     ["ex"] -> do
-      (t, a) <- elab Omega
-      e <- extract (initialPos file) t
-      putStrLn $ showCode0 e
+      t <- staged Omega
+      putStrLn $ showCode0 (extract t)
+    ["stage"] -> do
+      t <- staged Omega
+      putStrLn $ showTm0 (quoteO 0 t)
     _ -> showHelp
 
 main :: IO ()

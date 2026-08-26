@@ -90,12 +90,6 @@ tryForce v = case v of
 force :: Val -> Val
 force t = fromMaybe t (tryForce t)
 
-lvl2Ix :: Lvl -> Lvl -> Ix
-lvl2Ix (Lvl l) (Lvl x) = Ix (l - x - 1)
-
-ix2Lvl :: Lvl -> Ix -> Lvl
-ix2Lvl (Lvl l) (Ix x) = Lvl (l - x - 1)
-
 quoteSp :: Lvl -> Tm -> Spine -> Tm
 quoteSp l t = \case
   [] -> t

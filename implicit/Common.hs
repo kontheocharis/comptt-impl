@@ -63,6 +63,12 @@ newtype Lvl = Lvl {unLvl :: Int} deriving (Eq, Ord, Show, Num) via Int
 
 newtype MetaVar = MetaVar {unMetaVar :: Int} deriving (Eq, Show, Num) via Int
 
+lvl2Ix :: Lvl -> Lvl -> Ix
+lvl2Ix (Lvl l) (Lvl x) = Ix (l - x - 1)
+
+ix2Lvl :: Lvl -> Ix -> Lvl
+ix2Lvl (Lvl l) (Ix x) = Lvl (l - x - 1)
+
 -- Snoc
 --------------------------------------------------------------------------------
 

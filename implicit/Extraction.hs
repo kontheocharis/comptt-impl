@@ -1,52 +1,31 @@
 module Extraction where
 
 import Code (Code (..))
-import Common (Ix (..), Lvl (..), Mode (..), SourcePos)
-import Control.Exception (throwIO)
-import Control.Monad (when)
+import Common (Ix (..), Lvl (..), Mode (..), lvl2Ix)
 import Data.Maybe (fromJust)
-import Errors
-import Evaluation
-import Metacontext (anyUnsolved)
-import Syntax (Tm (..))
-import Value (Env, pattern VVar)
+import Staging (OTm (..))
 
 -- The environment used during extraction
 --
--- It consists of the evaluation environment, and a list of runtime levels
+-- It consists of a list of runtime levels
 -- that track how many irrelevant variables have been skipped.
-data ExEnv = ExEnv {nEnv :: Int, env :: Env, nRuntime :: Int, runtime :: [Maybe Lvl]}
+data ExEnv = ExEnv {nEnv :: Int, nRuntime :: Int, runtime :: [Maybe Lvl]}
 
--- @@Todo: we should have a stage procedure that first reduces all meta binders
-
--- Only allowed to extract closed terms
-extract :: SourcePos -> Tm -> IO Code
-extract pos t = do
-  anyUnsolved >>= \u -> when u (throwIO $ Error (pos) (ExtractError CannotExtractMeta))
-  pure $ go (ExEnv 0 [] 0 []) t
+extract :: OTm -> Code
+extract = go (ExEnv 0 0 [])
   where
     extend :: ExEnv -> Mode -> ExEnv
-    extend (ExEnv n env rn real) q@Zero = ExEnv (n + 1) (VVar (Lvl n) q : env) rn (Nothing : real)
-    extend (ExEnv n env rn real) q@Omega = ExEnv (n + 1) (VVar (Lvl n) q : env) (rn + 1) (Just (Lvl rn) : real)
+    extend (ExEnv n rn real) Zero = ExEnv (n + 1) rn (Nothing : real)
+    extend (ExEnv n rn real) Omega = ExEnv (n + 1) (rn + 1) (Just (Lvl rn) : real)
 
-    goMeta :: ExEnv -> Tm -> Code
-    goMeta exenv t = case tryForce (eval (env exenv) t) of
-      Just t' -> go exenv (quote (Lvl (nEnv exenv)) t')
-      Nothing -> error "impossible"
-
-    go :: ExEnv -> Tm -> Code
+    go :: ExEnv -> OTm -> Code
     go env t = case t of
-      Var (Ix x) _ -> CVar (lvl2Ix (Lvl (nRuntime env)) (fromJust $ (runtime env) !! x))
-      App t u _ Omega i -> CApp (go env t) (go env u)
-      App t u _ Zero i -> go env t
-      Lam x _ Omega i t -> CLam x (go (extend env Omega) t)
-      Lam x _ Zero i t -> go (extend env Zero) t
-      Let x _ Omega _ t u -> CLet x (go env t) (go (extend env Omega) u)
-      Let x _ Zero _ t u -> go (extend env Zero) u
-      Meta _ _ -> goMeta env t
-      InsertedMeta _ _ _ -> goMeta env t
-      Pi {} -> error "extracting Pi"
-      U _ -> error "extracting U"
-      Lift {} -> error "extracting Lift"
-      Quote {} -> error "extracting Quote"
-      Splice {} -> error "extracting Splice"
+      OVar x _ -> CVar (lvl2Ix (Lvl (nRuntime env)) (fromJust $ (runtime env) !! unIx (lvl2Ix (Lvl (nEnv env)) x)))
+      OApp t u Omega i -> CApp (go env t) (go env u)
+      OApp t u Zero i -> go env t
+      OLam x Omega i t -> CLam x (go (extend env Omega) t)
+      OLam x Zero i t -> go (extend env Zero) t
+      OLet x Omega _ t u -> CLet x (go env t) (go (extend env Omega) u)
+      OLet x Zero _ t u -> go (extend env Zero) u
+      OPi {} -> error "extracting Pi"
+      OU -> error "extracting U"
