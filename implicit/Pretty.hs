@@ -38,15 +38,25 @@ prettyTm prec = go prec
     bracket :: ShowS -> ShowS
     bracket ss = ('{' :) . ss . ('}' :)
 
-    mode :: Mode -> String
-    mode q = (show q ++ " ")
+    mode :: Stage -> Mode -> String
+    mode SMeta _ = ""
+    mode SObj Omega = ""
+    mode SObj Zero = "0 "
+
+    liftSym :: Mode -> String
+    liftSym Zero = "^0 "
+    liftSym Omega = "^"
+
+    letKw :: Stage -> String
+    letKw SObj = "let "
+    letKw SMeta = "letm "
 
     arrow :: Stage -> String
     arrow SObj = " → "
-    arrow SMeta = " →^ "
+    arrow SMeta = " ⇒ "
 
-    piBind ns x q Expl a = showParen True ((mode q ++) . (x ++) . (" : " ++) . go letp ns a)
-    piBind ns x q Impl a = bracket ((mode q ++) . (x ++) . (" : " ++) . go letp ns a)
+    piBind ns x s q Expl a = showParen True ((mode s q ++) . (x ++) . (" : " ++) . go letp ns a)
+    piBind ns x s q Impl a = bracket ((mode s q ++) . (x ++) . (" : " ++) . go letp ns a)
 
     lamBind x Impl = bracket (x ++)
     lamBind x Expl = (x ++)
@@ -70,20 +80,20 @@ prettyTm prec = go prec
           goLam ns t =
             (". " ++) . go letp ns t
       U SObj -> ("U" ++)
-      U SMeta -> ("U^" ++)
-      Lift a -> par p appp $ ("^" ++) . go atomp ns a
-      Splice t -> par p appp $ ("~" ++) . go atomp ns t
-      Quote t -> ("<" ++) . go letp ns t . (">" ++)
+      U SMeta -> ("UU" ++)
+      Lift q a -> par p appp $ (liftSym q ++) . go atomp ns a
+      Splice _ t -> par p appp $ ("~" ++) . go atomp ns t
+      Quote _ t -> ("<" ++) . go letp ns t . (">" ++)
       Pi "_" s Omega Expl a b -> par p pip $ go appp ns a . (arrow s ++) . go pip (ns :> "_") b
-      Pi (fresh ns -> x) s q i a b -> par p pip $ piBind ns x q i a . goPi s (ns :> x) b
+      Pi (fresh ns -> x) s q i a b -> par p pip $ piBind ns x s q i a . goPi s (ns :> x) b
         where
           goPi _ ns (Pi (fresh ns -> x) s' q i a b)
-            | x /= "_" = piBind ns x q i a . goPi s' (ns :> x) b
+            | x /= "_" = piBind ns x s' q i a . goPi s' (ns :> x) b
           goPi s ns b = (arrow s ++) . go pip ns b
-      Let (fresh ns -> x) _ q a t u ->
+      Let (fresh ns -> x) s q a t u ->
         par p letp $
-          ("let " ++)
-            . (mode q ++)
+          (letKw s ++)
+            . (mode s q ++)
             . (x ++)
             . (" : " ++)
             . go letp ns a

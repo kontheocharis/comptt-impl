@@ -31,12 +31,15 @@ parens p = char '(' *> p <* char ')'
 
 braces p = char '{' *> p <* char '}'
 
-pArrow = symbol "→" <|> symbol "->"
+pArrow :: Parser Stage
+pArrow =
+  (SObj <$ (symbol "→" <|> symbol "->"))
+    <|> (SMeta <$ (symbol "⇒" <|> symbol "=>"))
 
 pBind = pIdent <|> symbol "_"
 
 keyword :: String -> Bool
-keyword x = x == "let" || x == "λ" || x == "U"
+keyword x = x == "let" || x == "letm" || x == "λ" || x == "U" || x == "UU"
 
 pIdent :: Parser Name
 pIdent = try $ do
@@ -49,11 +52,23 @@ pKeyword kw = do
   C.string kw
   (takeWhile1P Nothing isAlphaNum *> empty) <|> ws
 
+pUniverse :: Parser Tm
+pUniverse =
+  try (U SMeta <$ pKeyword "UU") <|> (U SObj <$ pKeyword "U")
+
+pLift :: Parser Tm
+pLift = do
+  C.char '^'
+  q <- (Zero <$ C.char '0') <|> pure Omega
+  ws
+  Lift q <$> pAtom
+
 pAtom :: Parser Tm
 pAtom =
   withPos
     ( (Var <$> pIdent)
-        <|> (U <$ char 'U')
+        <|> pUniverse
+        <|> pLift
         <|> (Hole <$ char '_')
     )
     <|> parens pTm
@@ -86,9 +101,7 @@ pLam = do
 
 pOptMode :: Parser Mode
 pOptMode =
-  optional (char '0') >>= \case
-    Nothing -> pure Omega
-    Just _ -> pure Zero
+  (Zero <$ char '0') <|> (Omega <$ char 'ω') <|> pure Omega
 
 pPiBinder :: Parser (Mode, [Name], Tm, Icit)
 pPiBinder =
@@ -108,20 +121,20 @@ pPiBinder =
 pPi :: Parser Tm
 pPi = do
   dom <- some pPiBinder
-  pArrow
+  s <- pArrow
   cod <- pTm
-  pure $ foldr (\(m, xs, a, i) t -> foldr (\x -> Pi x m i a) t xs) cod dom
+  pure $ foldr (\(m, xs, a, i) t -> foldr (\x -> Pi x m i s a) t xs) cod dom
 
 pFunOrSpine :: Parser Tm
 pFunOrSpine = do
   sp <- pSpine
   optional pArrow >>= \case
     Nothing -> pure sp
-    Just _ -> Pi "_" Omega Expl sp <$> pTm
+    Just s -> Pi "_" Omega Expl s sp <$> pTm
 
 pLet :: Parser Tm
 pLet = do
-  pKeyword "let"
+  s <- (SMeta <$ try (pKeyword "letm")) <|> (SObj <$ pKeyword "let")
   m <- pOptMode
   x <- pIdent
   ann <- optional (char ':' *> pTm)
@@ -129,7 +142,7 @@ pLet = do
   t <- pTm
   symbol ";"
   u <- pTm
-  pure $ Let x m (maybe Hole id ann) t u
+  pure $ Let x s m (maybe Hole id ann) t u
 
 pTm :: Parser Tm
 pTm = withPos (pLam <|> pLet <|> try pPi <|> pFunOrSpine)

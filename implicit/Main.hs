@@ -31,7 +31,7 @@ mainWith :: IO [String] -> IO (P.Tm, String) -> IO ()
 mainWith getOpt getRaw = do
   (t, file) <- getRaw
   let elab m = do
-        inferIn (emptyCxt (initialPos file)) m t
+        inferIn (emptyCxt (initialPos file)) SObj m t
           `catch` \e -> (displayError file e >> exitFailure)
 
   let parseMode "0" = pure Zero

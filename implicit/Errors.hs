@@ -24,6 +24,8 @@ data ElabError
   | NoNamedImplicitArg Name
   | IcitMismatch Icit Icit
   | InsufficientMode
+  | StageMismatch Stage Stage
+  | ErasedMetaBinder
   deriving (Show, Exception)
 
 data ExtractError
@@ -75,6 +77,13 @@ displayError file (Error ps e) = do
               (show i')
           InsufficientMode ->
             "Term is valid in mode 0 but need mode ω"
+          ErasedMetaBinder ->
+            "Meta-level binders cannot be marked erased"
+          StageMismatch s s' ->
+            printf
+              ("Stage mismatch: expected a term at stage %s, but this one is at stage %s.")
+              (show s)
+              (show s')
 
   printf "%s:%d:%d:\n" path linum colnum
   printf "%s |\n" lpad

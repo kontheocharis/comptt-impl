@@ -18,6 +18,12 @@ data Mode = Zero | Omega deriving (Eq)
 -- Which level of the 2LTT a term belongs to
 data Stage = SObj | SMeta deriving (Eq)
 
+-- The erasure mode for types in a given stage.
+-- Here `Omega` really means "erasure marker not necessary".
+stageMode :: Stage -> Mode
+stageMode SObj = Zero
+stageMode SMeta = Omega
+
 -- Erasure marker (#), appears in contexts:
 -- Tm ω (Γ, #) ≃ Tm 0 Γ
 data Marker = Present | Absent deriving (Eq, Show)

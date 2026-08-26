@@ -7,7 +7,7 @@ type Env = [Val]
 
 data Elim
   = EApp Val Stage Mode Icit
-  | ESplice
+  | ESplice Mode
   deriving (Show)
 
 type Spine = [Elim]
@@ -22,8 +22,8 @@ data Val
   | VLam Name Stage Mode Icit {-# UNPACK #-} Closure
   | VPi Name Stage Mode Icit ~VTy {-# UNPACK #-} Closure
   | VU Stage
-  | VLift VTy
-  | VQuote Val
+  | VLift Mode VTy
+  | VQuote Mode Val
   deriving (Show)
 
 -- Pattern for variables x0 or xω

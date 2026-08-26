@@ -13,17 +13,17 @@ data Tm
   | Let Name Stage Mode Ty Tm Tm
   | Meta MetaVar Marker
   | InsertedMeta MetaVar Marker [BD]
-  | Lift Ty
-  | Quote Tm
-  | Splice Tm
+  | Lift Mode Ty
+  | Quote Mode Tm
+  | Splice Mode Tm
   deriving (Show)
 
 -- Shallowly eliminate Quote and Splice constructors:
 
-quoteS :: Tm -> Tm
-quoteS (Splice t) = t
-quoteS t = Quote t
+quoteS :: Mode -> Tm -> Tm
+quoteS _ (Splice _ t) = t
+quoteS q t = Quote q t
 
-spliceS :: Tm -> Tm
-spliceS (Quote t) = t
-spliceS t = Splice t
+spliceS :: Mode -> Tm -> Tm
+spliceS _ (Quote _ t) = t
+spliceS q t = Splice q t
