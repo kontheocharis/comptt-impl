@@ -100,9 +100,7 @@ rename m pren v = go pren v
       VU s -> do
         encounterU pren
         pure (U s)
-      VLift q a -> do
-        encounterU pren
-        Lift q <$> go pren a
+      VLift q a -> Lift q <$> go (liftMarker pren) a
       VQuote q t -> case q of
         Omega -> quoteS q <$> go pren t
         Zero -> quoteS q <$> go (liftMarker pren) t
@@ -134,6 +132,10 @@ unify l t u = case (force t, force u) of
   (VLam _ s q _ t, VLam _ s' q' _ t')
     | s == s' && q == q' -> unify (l + 1) (t $$ VVar l q) (t' $$ VVar l q')
     | otherwise -> throwIO UnifyError
+  (VFlex m _ sp, VFlex m' _ sp')
+    | m == m' -> unifySp l sp sp'
+  (VFlex m mrk (sp :> ESplice q), t') -> solve l m mrk sp (vQuote q t')
+  (t, VFlex m' mrk (sp' :> ESplice q)) -> solve l m' mrk sp' (vQuote q t)
   (t, VLam _ s q i t') -> unify (l + 1) (vApp t (VVar l q) s q i) (t' $$ VVar l q)
   (VLam _ s q i t, t') -> unify (l + 1) (t $$ VVar l q) (vApp t' (VVar l q) s q i)
   (VU s, VU s') | s == s' -> pure ()
@@ -145,10 +147,6 @@ unify l t u = case (force t, force u) of
   (t, VQuote q t') -> unify l (vSplice q t) t'
   (VRigid x _ sp, VRigid x' _ sp')
     | x == x' -> unifySp l sp sp'
-  (VFlex m _ sp, VFlex m' _ sp')
-    | m == m' -> unifySp l sp sp'
-  (VFlex m mrk (sp :> ESplice q), t') -> solve l m mrk sp (vQuote q t')
-  (t, VFlex m' mrk (sp' :> ESplice q)) -> solve l m' mrk sp' (vQuote q t)
   (VFlex m mrk sp, t') -> solve l m mrk sp t'
   (t, VFlex m' mrk sp') -> solve l m' mrk sp' t
   _ -> throwIO UnifyError

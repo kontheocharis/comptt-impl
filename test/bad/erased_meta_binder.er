@@ -1,0 +1,3 @@
+-- expect: Meta-level binders cannot be marked erased
+letm F : UU = (0 X : UU) => UU;
+U

@@ -1,0 +1,6 @@
+-- expect: Stage mismatch
+let 0 Nat : U = (0 A : U) -> A -> (A -> A) -> A;
+let zero : Nat = \A z s. z;
+letm q : ^Nat = <zero>;
+letm b : ^Nat = ~q;
+zero

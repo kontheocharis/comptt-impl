@@ -1,0 +1,3 @@
+-- expect: Cannot unify
+let 0 G : U = (A : U) => U;
+U

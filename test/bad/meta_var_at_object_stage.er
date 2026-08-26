@@ -1,0 +1,4 @@
+-- expect: Stage mismatch
+letm M : UU = UU;
+let 0 C : U = M;
+U
