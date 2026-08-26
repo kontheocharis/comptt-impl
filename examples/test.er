@@ -1,0 +1,9 @@
+
+let id : (0 A : U) -> A -> A
+    = \A a . a;
+    
+
+id U (U -> U)
+
+
+-- U == Type

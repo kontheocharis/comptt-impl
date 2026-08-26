@@ -1,0 +1,18 @@
+let 0 Nat : U = (0 A : U) -> A -> (A -> A) -> A;
+let zero : Nat = \A z s. z;
+let succ : Nat -> Nat = \n A z s. s (n A z s);
+
+let bing : 
+  (0 A : U) ->
+  (F : U -> U) ->
+  (0 eq : {0 A : U} -> A -> A -> U) ->
+  (refl : {0 A : U} -> {0 a : A} -> eq a a) -> Nat
+  = \A F eq refl . (
+    -- Agda can't figure out that this meta is unsolvable: 
+    -- https://github.com/agda/agda/issues/5703
+    let X : U = _;
+    let unsolved : eq X (F A) = refl;
+    zero
+  );
+
+zero

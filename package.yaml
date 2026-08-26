@@ -1,0 +1,48 @@
+name: comptt-impl
+version: 0.1.0.0
+github: "kontheocharis/comptt-impl"
+license: BSD3
+author: "András Kovács, Constantine Theocharis"
+maintainer: "Constantine Theocharis"
+copyright: "2019 András Kovács, 2026 Constantine Theocharis"
+category: Language
+
+description: "Implementations of elaboration for type theory with erasure"
+
+default-extensions:
+  - DerivingVia
+  - DeriveAnyClass
+  - FlexibleContexts
+  - GeneralizedNewtypeDeriving
+  - LambdaCase
+  - OverloadedStrings
+  - PatternSynonyms
+  - StandaloneDeriving
+  - Strict
+  - TupleSections
+  - ViewPatterns
+
+ghc-options:
+  - -Wall
+  - -Wno-name-shadowing
+  - -Wno-missing-signatures
+  - -Wno-unused-do-bind
+  - -Wno-unused-matches
+
+dependencies:
+  - base >= 4.7 && < 5
+  - containers
+  - megaparsec
+
+executables:
+  explicit:
+    main: Main.hs
+    source-dirs: explicit
+    ghc-options:
+      - -O
+
+  implicit:
+    main: Main.hs
+    source-dirs: implicit
+    ghc-options:
+      - -O

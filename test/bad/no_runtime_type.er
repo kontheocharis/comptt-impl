@@ -1,0 +1,7 @@
+let 0 Nat : U = (0 A : U) -> A -> (A -> A) -> A;
+let zero : Nat = \A z s. z;
+let succ : Nat -> Nat = \n A z s. s (n A z s);
+
+let f : (0 A : U) -> (0 a : A) -> (B : U) -> B -> B = \A a B b. b;
+let bad : (0 n : Nat) -> Nat = \n. f Nat n Nat n;
+bad

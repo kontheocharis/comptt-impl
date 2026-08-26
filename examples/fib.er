@@ -1,0 +1,24 @@
+-- Fibonacci with a bunch of mixed modes
+-- run in 0 mode
+
+let 0 Nat : U = (0 A : U) -> A -> (A -> A) -> A;
+
+let zero : Nat = \A z s. z;
+
+let succ : Nat -> Nat = \n A z s. s (n A z s);
+
+let 0 rec : {0 A : U} -> (0 a : A) -> (A -> A) -> (0 n : Nat) -> A
+  = \{A} z s n . n A z s;
+
+let 0 add : (0 a : Nat) -> Nat -> Nat = \a n. rec a succ n;
+
+let 0 mul : (0 n : Nat) -> Nat -> Nat = \a n. rec zero (add a) n;
+  
+let 0 one = succ zero;
+
+let 0 two = succ one;
+
+let 0 exp : (0 a : Nat) -> Nat -> Nat = \a n. rec one (mul a) n;
+
+exp two (exp two two)
+

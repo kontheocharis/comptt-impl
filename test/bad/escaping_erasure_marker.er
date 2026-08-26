@@ -1,0 +1,16 @@
+let 0 Id : {0 A : U} -> A -> A -> U = \{A} x y. (0 P : A -> U) -> P x -> P y;
+let refl : {0 A : U} -> {0 x : A} -> Id x x = \{A} {x} P px. px;
+
+let bing : (0 badd : {0 A : U} -> A -> A) -> _ = \badd. (
+  let bing : {0 A : U} -> (a : A) -> A = _;
+
+  let 0 foo : {0 A : U} -> (0 a : A) -> A = \a . badd a;
+
+  let bar : {0 A : U} -> (a : A) -> Id (foo a) (bing a) = \a . refl;
+
+  bar
+);
+
+
+bing
+

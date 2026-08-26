@@ -1,0 +1,50 @@
+# Stack build artifacts
+.stack-work/
+stack.yaml.lock
+
+# Cabal build artifacts
+dist/
+dist-newstyle/
+cabal.dev
+*.o
+*.hi
+*.chi
+*.chs.h
+*.dyn_o
+*.dyn_hi
+.hpc
+.hsenv
+.cabal-sandbox/
+cabal.sandbox.config
+*.prof
+*.aux
+*.hp
+*.eventlog
+
+# GHC
+.ghc.environment.*
+*.o-boot
+*.hi-boot
+
+# Haskell Language Server
+.hie/
+hie.yaml.local
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Generated cabal file (if using hpack/package.yaml)
+*.cabal
+
+# Temporary files
+*.bak
+*.tmp
+.*.swp
+
+# Output binaries
+comptt-impl

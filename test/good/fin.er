@@ -1,0 +1,20 @@
+let 0 Nat : U = (0 A : U) -> A -> (A -> A) -> A;
+
+let zero : Nat = \A z s. z;
+
+let succ : Nat -> Nat = \n A z s. s (n A z s);
+
+let 0 Fin : Nat -> U
+  = \n . (0 A : Nat -> U)
+    -> ({0 k : Nat} -> A (succ k))
+    -> ({0 k : Nat} -> A k -> A (succ k))
+    -> A n;
+  
+let fzero : {0 k : Nat} -> Fin (succ k)
+  = \A fz fs. fz;
+  
+let fsucc : {0 k : Nat} -> Fin k -> Fin (succ k)
+  = \n A fz fs. fs (n A fz fs);
+
+
+zero
