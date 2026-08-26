@@ -15,6 +15,9 @@ type Name = String
 -- i ∈ {0, ω}
 data Mode = Zero | Omega deriving (Eq)
 
+-- Which level of the 2LTT a term belongs to
+data Stage = SObj | SMeta deriving (Eq)
+
 -- Erasure marker (#), appears in contexts:
 -- Tm ω (Γ, #) ≃ Tm 0 Γ
 data Marker = Present | Absent deriving (Eq, Show)
@@ -32,11 +35,15 @@ getMarker Omega = Absent
 
 data Icit = Impl | Expl deriving (Eq)
 
-data BD = Bound Mode | Defined deriving (Show)
+data BD = Bound Stage Mode | Defined deriving (Show)
 
 instance Show Mode where
   show Zero = "0"
   show Omega = "ω"
+
+instance Show Stage where
+  show SObj = "obj"
+  show SMeta = "meta"
 
 instance Show Icit where
   show Impl = "implicit"

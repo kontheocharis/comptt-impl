@@ -40,21 +40,23 @@ liftMarker (PRen dom cod domMd ren) =
   PRen dom cod Present ren
 
 -- | invert : (Γ : Cxt) → # ∈ Γ → Sub Γ Δ → PRen Δ Γ
-invert :: Lvl -> Marker -> Spine -> IO PartialRenaming
+--   Also returns the binders of the inverted spine, in spine order.
+invert :: Lvl -> Marker -> Spine -> IO (PartialRenaming, [(Stage, Mode, Icit)])
 invert gamma mrk sp = do
-  let go :: Spine -> IO (Lvl, IM.IntMap (Lvl, Mode))
-      go [] = pure (0, mempty)
-      go (sp :> (t, _, _)) = do
-        (dom, ren) <- go sp
+  let go :: Spine -> IO (Lvl, IM.IntMap (Lvl, Mode), [(Stage, Mode, Icit)])
+      go [] = pure (0, mempty, [])
+      go (_ :> ESplice) = throwIO InversionNonVariables
+      go (sp :> EApp t s q i) = do
+        (dom, ren, bs) <- go sp
         case force t of
           VVar (Lvl x) md ->
             if IM.notMember x ren
-              then pure (dom + 1, IM.insert x (dom, md) ren)
+              then pure (dom + 1, IM.insert x (dom, md) ren, bs :> (s, q, i))
               else throwIO InversionNonLinear
           _ -> throwIO InversionNonVariables
 
-  (dom, ren) <- go sp
-  pure $ PRen dom gamma mrk ren
+  (dom, ren, bs) <- go sp
+  pure (PRen dom gamma mrk ren, bs)
 
 -- | rename : (m : Meta i Δ) → PRen Δ Γ → Val Γ → Tm Δ
 rename :: MetaVar -> PartialRenaming -> Val -> IO Tm
@@ -62,10 +64,11 @@ rename m pren v = go pren v
   where
     goSp :: PartialRenaming -> Tm -> Spine -> IO Tm
     goSp pren t [] = pure t
-    goSp pren t (sp :> (u, q, i)) = case q of
-      Omega -> App <$> goSp pren t sp <*> go pren u <*> pure q <*> pure i
+    goSp pren t (sp :> EApp u s q i) = case q of
+      Omega -> App <$> goSp pren t sp <*> go pren u <*> pure s <*> pure q <*> pure i
       -- Every time we see a ↓, we must bind a #
-      Zero -> App <$> goSp pren t sp <*> go (liftMarker pren) u <*> pure q <*> pure i
+      Zero -> App <$> goSp pren t sp <*> go (liftMarker pren) u <*> pure s <*> pure q <*> pure i
+    goSp pren t (sp :> ESplice) = spliceS <$> goSp pren t sp
 
     -- Every time we see a ↑, we must check that # ∈ Γ
     encounterU :: PartialRenaming -> IO ()
@@ -87,48 +90,61 @@ rename m pren v = go pren v
           Just (x', md) -> do
             -- Substitute the variable, adjusting for any ↑/↓ differences
             goSp pren (Var (lvl2Ix (dom pren) x') md) sp
-      VLam x q i t ->
-        Lam x q i <$> go (lift q pren) (t $$ VVar (cod pren) q)
-      VPi x q i a b -> do
+      VLam x s q i t ->
+        Lam x s q i <$> go (lift q pren) (t $$ VVar (cod pren) q)
+      VPi x s q i a b -> do
         encounterU pren
-        (Pi x q i <$> go pren a <*> go (lift Zero pren) (b $$ VVar (cod pren) Zero))
-      VU -> do
+        (Pi x s q i <$> go pren a <*> go (lift Zero pren) (b $$ VVar (cod pren) Zero))
+      VU s -> do
         encounterU pren
-        pure U
+        pure (U s)
+      VLift a -> do
+        encounterU pren
+        Lift <$> go pren a
+      VQuote t -> quoteS <$> go pren t
 
-lams :: [(Mode, Icit)] -> Tm -> Tm
+lams :: [(Stage, Mode, Icit)] -> Tm -> Tm
 lams = go (0 :: Int)
   where
     go x [] t = t
-    go x ((q, i) : is) t = Lam ("x" ++ show (x + 1)) q i $ go (x + 1) is t
+    go x ((s, q, i) : is) t = Lam ("x" ++ show (x + 1)) s q i $ go (x + 1) is t
 
 -- (For the 'NotDowned' case:)
 -- solve : (Γ : Con) → (m : Meta i Δ) -> # ∈ Δ → Sub Γ Δ → Tm Γ → TC ()
 solve :: Lvl -> MetaVar -> Marker -> Spine -> Val -> IO ()
 solve gamma m mrk sp rhs = do
-  pren <- invert gamma mrk sp
+  (pren, binders) <- invert gamma mrk sp
   rhs <- rename m pren rhs
-  let solution = eval [] $ lams (reverse $ map (\(_, q, i) -> (q, i)) sp) rhs
+  let solution = eval [] $ lams (reverse binders) rhs
   modifyIORef' mcxt $ IM.insert (unMetaVar m) (Solved mrk solution)
 
 unifySp :: Lvl -> Spine -> Spine -> IO ()
 unifySp l sp sp' = case (sp, sp') of
   ([], []) -> pure ()
-  (sp :> (t, q, _), sp' :> (t', q', _)) | q == q' -> unifySp l sp sp' >> unify l t t'
+  (sp :> EApp t s q _, sp' :> EApp t' s' q' _) | s == s' && q == q' -> unifySp l sp sp' >> unify l t t'
+  (sp :> ESplice, sp' :> ESplice) -> unifySp l sp sp'
   _ -> throwIO UnifyError
 
 unify :: Lvl -> Val -> Val -> IO ()
 unify l t u = case (force t, force u) of
-  (VLam _ q _ t, VLam _ q' _ t') -> unify (l + 1) (t $$ VVar l q) (t' $$ VVar l q')
-  (t, VLam _ q i t') -> unify (l + 1) (vApp t (VVar l q) q i) (t' $$ VVar l q)
-  (VLam _ q i t, t') -> unify (l + 1) (t $$ VVar l q) (vApp t' (VVar l q) q i)
-  (VU, VU) -> pure ()
-  (VPi x q i a b, VPi x' q' i' a' b')
-    | q == q' && i == i' -> unify l a a' >> unify (l + 1) (b $$ VVar l Zero) (b' $$ VVar l Zero)
-  (VRigid _ x sp, VRigid _ x' sp')
+  (VLam _ s q _ t, VLam _ s' q' _ t')
+    | s == s' && q == q' -> unify (l + 1) (t $$ VVar l q) (t' $$ VVar l q')
+    | otherwise -> throwIO UnifyError
+  (t, VLam _ s q i t') -> unify (l + 1) (vApp t (VVar l q) s q i) (t' $$ VVar l q)
+  (VLam _ s q i t, t') -> unify (l + 1) (t $$ VVar l q) (vApp t' (VVar l q) s q i)
+  (VU s, VU s') | s == s' -> pure ()
+  (VPi x s q i a b, VPi x' s' q' i' a' b')
+    | s == s' && q == q' && i == i' -> unify l a a' >> unify (l + 1) (b $$ VVar l Zero) (b' $$ VVar l Zero)
+  (VLift a, VLift a') -> unify l a a'
+  (VQuote t, VQuote t') -> unify l t t'
+  (VQuote t, t') -> unify l t (vSplice t')
+  (t, VQuote t') -> unify l (vSplice t) t'
+  (VRigid x _ sp, VRigid x' _ sp')
     | x == x' -> unifySp l sp sp'
   (VFlex m _ sp, VFlex m' _ sp')
     | m == m' -> unifySp l sp sp'
+  (VFlex m mrk (sp :> ESplice), t') -> solve l m mrk sp (vQuote t')
+  (t, VFlex m' mrk (sp' :> ESplice)) -> solve l m' mrk sp' (vQuote t)
   (VFlex m mrk sp, t') -> solve l m mrk sp t'
   (t, VFlex m' mrk sp') -> solve l m' mrk sp' t
   _ -> throwIO UnifyError

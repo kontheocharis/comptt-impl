@@ -11,7 +11,7 @@ import Value
 
 data NameOrigin = Inserted | Source deriving (Eq)
 
-type Types = [(String, NameOrigin, Mode, VTy)]
+type Types = [(String, NameOrigin, Stage, Mode, VTy)]
 
 data Cxt = Cxt
   { -- used for:
@@ -25,7 +25,7 @@ data Cxt = Cxt
   }
 
 cxtNames :: Cxt -> [Name]
-cxtNames = fmap (\(x, _, _, _) -> x) . types
+cxtNames = fmap (\(x, _, _, _, _) -> x) . types
 
 showVal :: Cxt -> Val -> String
 showVal cxt v =
@@ -41,19 +41,19 @@ emptyCxt :: SourcePos -> Cxt
 emptyCxt p = Cxt [] 0 [] [] p Absent
 
 -- Γ ↦ Γ, i x : A
-bind :: Cxt -> Name -> Mode -> VTy -> Cxt
-bind (Cxt env l types bds pos md) x q ~a =
-  Cxt (env :> VVar l q) (l + 1) (types :> (x, Source, q, a)) (bds :> Bound q) pos md
+bind :: Cxt -> Name -> Stage -> Mode -> VTy -> Cxt
+bind (Cxt env l types bds pos md) x s q ~a =
+  Cxt (env :> VVar l q) (l + 1) (types :> (x, Source, s, q, a)) (bds :> Bound s q) pos md
 
 -- Γ ↦ Γ, i x : A
-newBinder :: Cxt -> Name -> Mode -> VTy -> Cxt
-newBinder (Cxt env l types bds pos md) x q ~a =
-  Cxt (env :> VVar l q) (l + 1) (types :> (x, Inserted, q, a)) (bds :> Bound q) pos md
+newBinder :: Cxt -> Name -> Stage -> Mode -> VTy -> Cxt
+newBinder (Cxt env l types bds pos md) x s q ~a =
+  Cxt (env :> VVar l q) (l + 1) (types :> (x, Inserted, s, q, a)) (bds :> Bound s q) pos md
 
 -- Γ ↦ Γ, i x := t
-define :: Cxt -> Name -> Mode -> Val -> VTy -> Cxt
-define (Cxt env l types bds pos md) x q ~t ~a =
-  Cxt (env :> t) (l + 1) (types :> (x, Source, q, a)) (bds :> Defined) pos md
+define :: Cxt -> Name -> Stage -> Mode -> Val -> VTy -> Cxt
+define (Cxt env l types bds pos md) x s q ~t ~a =
+  Cxt (env :> t) (l + 1) (types :> (x, Source, s, q, a)) (bds :> Defined) pos md
 
 -- | closeVal : (Γ : Con) → Val (Γ, i x : A) B → Closure Γ A B
 closeVal :: Cxt -> Val -> Closure

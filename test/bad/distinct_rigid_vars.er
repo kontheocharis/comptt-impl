@@ -1,0 +1,3 @@
+let test : (0 A : U) -> (0 B : (0 _ : A) -> U) -> (0 x : A) -> (0 y : A) -> B x -> B y
+  = \A B x y p. p;
+test

@@ -17,6 +17,8 @@ import Value (Env, pattern VVar)
 -- that track how many irrelevant variables have been skipped.
 data ExEnv = ExEnv {nEnv :: Int, env :: Env, nRuntime :: Int, runtime :: [Maybe Lvl]}
 
+-- @@Todo: we should have a stage procedure that first reduces all meta binders
+
 -- Only allowed to extract closed terms
 extract :: SourcePos -> Tm -> IO Code
 extract pos t = do
@@ -35,13 +37,16 @@ extract pos t = do
     go :: ExEnv -> Tm -> Code
     go env t = case t of
       Var (Ix x) _ -> CVar (lvl2Ix (Lvl (nRuntime env)) (fromJust $ (runtime env) !! x))
-      App t u Omega i -> CApp (go env t) (go env u)
-      App t u Zero i -> go env t
-      Lam x Omega i t -> CLam x (go (extend env Omega) t)
-      Lam x Zero i t -> go (extend env Zero) t
-      Let x Omega _ t u -> CLet x (go env t) (go (extend env Omega) u)
-      Let x Zero _ t u -> go (extend env Zero) u
+      App t u _ Omega i -> CApp (go env t) (go env u)
+      App t u _ Zero i -> go env t
+      Lam x _ Omega i t -> CLam x (go (extend env Omega) t)
+      Lam x _ Zero i t -> go (extend env Zero) t
+      Let x _ Omega _ t u -> CLet x (go env t) (go (extend env Omega) u)
+      Let x _ Zero _ t u -> go (extend env Zero) u
       Meta _ _ -> goMeta env t
       InsertedMeta _ _ _ -> goMeta env t
-      Pi x q i a b -> error "extracting Pi"
-      U -> error "extracting U"
+      Pi {} -> error "extracting Pi"
+      U _ -> error "extracting U"
+      Lift {} -> error "extracting Lift"
+      Quote {} -> error "extracting Quote"
+      Splice {} -> error "extracting Splice"
