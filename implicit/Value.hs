@@ -16,6 +16,10 @@ data Closure = Closure Env Tm deriving (Show)
 
 type VTy = Val
 
+type VRep = Val
+
+type VPol = Val
+
 data Val
   = VFlex MetaVar Marker Spine
   | VRigid Lvl Mode Spine
@@ -24,6 +28,10 @@ data Val
   | VU Stage
   | VLift Mode VTy
   | VQuote Mode Val
+  | VPolU
+  | VPol Polarity
+  | VRepU VPol
+  | VRep (RepF VPol VRep)
   deriving (Show)
 
 -- Pattern for variables x0 or xω

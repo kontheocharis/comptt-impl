@@ -2,7 +2,13 @@ module Syntax where
 
 import Common
 
+-- nbe chat going to hate this
+
 type Ty = Tm
+
+type Rep = Tm
+
+type Pol = Tm
 
 data Tm
   = Var Ix Mode
@@ -16,9 +22,11 @@ data Tm
   | Lift Mode Ty
   | Quote Mode Tm
   | Splice Mode Tm
+  | PolU
+  | Pol Polarity
+  | RepU Pol
+  | Rep (RepF Pol Rep)
   deriving (Show)
-
--- Shallowly eliminate Quote and Splice constructors:
 
 quoteS :: Mode -> Tm -> Tm
 quoteS _ (Splice _ t) = t

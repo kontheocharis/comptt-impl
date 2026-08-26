@@ -33,13 +33,22 @@ braces p = char '{' *> p <* char '}'
 
 pArrow :: Parser Stage
 pArrow =
-  (SObj <$ (symbol "→" <|> symbol "->"))
-    <|> (SMeta <$ (symbol "⇒" <|> symbol "=>"))
+  (SMeta <$ try (symbol "→'" <|> symbol "->'"))
+    <|> (SObj <$ (symbol "→" <|> symbol "->"))
+
+pRepArrowSym :: Parser ()
+pRepArrowSym = void (symbol "⇒" <|> symbol "=>")
 
 pBind = pIdent <|> symbol "_"
 
 keyword :: String -> Bool
-keyword x = x == "let" || x == "letm" || x == "λ" || x == "U" || x == "UU"
+keyword x =
+  x == "let"
+    || x == "letm"
+    || x == "λ"
+    || x == "U"
+    || x == "Pol"
+    || x == "Rep"
 
 pIdent :: Parser Name
 pIdent = try $ do
@@ -54,7 +63,24 @@ pKeyword kw = do
 
 pUniverse :: Parser Tm
 pUniverse =
-  try (U SMeta <$ pKeyword "UU") <|> (U SObj <$ pKeyword "U")
+  try (U SMeta <$ pKeyword "U'") <|> (U SObj <$ pKeyword "U")
+
+pPolU :: Parser Tm
+pPolU = PolU <$ try (pKeyword "Pol")
+
+pPolLit :: Parser Tm
+pPolLit =
+  (Pol Pos <$ char '+')
+    <|> (Pol Neg <$ try (lexeme (C.char '-' <* notFollowedBy (C.char '>')))) -- don't swallow function arrows
+
+pRepU :: Parser Tm
+pRepU = RepU <$> (try (pKeyword "Rep") *> pAtom)
+
+pRUnit :: Parser Tm
+pRUnit = Rep . RUnit <$> (symbol "*" *> pAtom)
+
+pRProducer :: Parser Tm
+pRProducer = Rep . RProducer <$> ((symbol "▹" <|> symbol "|>") *> pAtom)
 
 pLift :: Parser Tm
 pLift = do
@@ -74,6 +100,11 @@ pAtom =
   withPos
     ( (Var <$> pIdent)
         <|> pUniverse
+        <|> pPolU
+        <|> pPolLit
+        <|> pRepU
+        <|> pRUnit
+        <|> pRProducer
         <|> pLift
         <|> pQuote
         <|> pSplice
@@ -133,9 +164,16 @@ pPi = do
   cod <- pTm
   pure $ foldr (\(m, xs, a, i) t -> foldr (\x -> Pi x m i s a) t xs) cod dom
 
+pRepArrowOrSpine :: Parser Tm
+pRepArrowOrSpine = do
+  a <- pSpine
+  optional pRepArrowSym >>= \case
+    Nothing -> pure a
+    Just _ -> Rep . RArrow a <$> pRepArrowOrSpine
+
 pFunOrSpine :: Parser Tm
 pFunOrSpine = do
-  sp <- pSpine
+  sp <- pRepArrowOrSpine
   optional pArrow >>= \case
     Nothing -> pure sp
     Just s -> Pi "_" Omega Expl s sp <$> pTm

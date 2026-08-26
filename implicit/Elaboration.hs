@@ -83,6 +83,12 @@ checkBinderMode :: Cxt -> Stage -> Mode -> IO ()
 checkBinderMode cxt SMeta Zero = elabError cxt ErasedMetaBinder
 checkBinderMode _ _ _ = pure ()
 
+checkMetaOnly :: Cxt -> Stage -> IO ()
+checkMetaOnly cxt s = when (s /= SMeta) (elabError cxt $ StageMismatch s SMeta)
+
+checkRep :: Cxt -> Polarity -> P.Tm -> IO Tm
+checkRep cxt th a = check cxt SMeta a (VRepU (VPol th))
+
 -- Check in mode ω (default)
 check :: Cxt -> Stage -> P.Tm -> VTy -> IO Tm
 check cxt s t a = case (t, force a) of
@@ -177,6 +183,29 @@ infer cxt s = \case
   P.Lift q a -> do
     a <- checkIn cxt SObj Zero a (VU SObj)
     pure (Lift q a, VU SMeta)
+  P.PolU -> do
+    checkMetaOnly cxt s
+    pure (PolU, VU SMeta)
+  P.Pol th -> do
+    checkMetaOnly cxt s
+    pure (Pol th, VPolU)
+  P.RepU th -> do
+    checkMetaOnly cxt s
+    th <- check cxt SMeta th VPolU
+    pure (RepU th, VU SMeta)
+  P.Rep (RUnit th) -> do
+    checkMetaOnly cxt s
+    th <- check cxt SMeta th VPolU
+    pure (Rep (RUnit th), VRepU (eval (env cxt) th))
+  P.Rep (RProducer a) -> do
+    checkMetaOnly cxt s
+    a <- checkRep cxt Pos a
+    pure (Rep (RProducer a), VRepU (VPol Neg))
+  P.Rep (RArrow a b) -> do
+    checkMetaOnly cxt s
+    a <- checkRep cxt Pos a
+    b <- checkRep cxt Neg b
+    pure (Rep (RArrow a b), VRepU (VPol Neg))
   P.Quote t -> do
     when (s /= SMeta) (elabError cxt $ StageMismatch s SMeta)
     (t, a) <- inferIn cxt SObj Omega t

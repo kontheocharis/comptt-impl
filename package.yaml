@@ -12,6 +12,9 @@ description: "Implementations of elaboration for type theory with erasure"
 default-extensions:
   - DerivingVia
   - DeriveAnyClass
+  - DeriveFunctor
+  - DeriveFoldable
+  - DeriveTraversable
   - FlexibleContexts
   - GeneralizedNewtypeDeriving
   - LambdaCase

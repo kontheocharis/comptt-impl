@@ -4,7 +4,7 @@ let succ : Nat -> Nat = \n A z s. s (n A z s);
 let 0 Eq : (0 A : U) -> (0 x : A) -> (0 y : A) -> U
   = \A x y. (0 P : (0 _ : A) -> U) -> (0 _ : P x) -> P y;
 let 0 refl : (0 A : U) -> (0 x : A) -> Eq A x x = \A x P px. px;
-letm F : (X : UU) => UU = \X. X;
+letm F : (X : U') ->' U' = \X. X;
 letm q : F ^Nat = <succ zero>;
 let r : Nat = ~q;
 let 0 assert : Eq Nat r (succ zero) = refl Nat (succ zero);

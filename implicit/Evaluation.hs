@@ -79,6 +79,10 @@ eval env t = case t of
   Lift q a -> VLift q (eval env a)
   Quote q t -> vQuote q (eval env t)
   Splice q t -> vSplice q (eval env t)
+  PolU -> VPolU
+  Pol p -> VPol p
+  RepU th -> VRepU (eval env th)
+  Rep r -> VRep (bimapRepF (eval env) (eval env) r)
 
 tryForce :: Val -> Maybe Val
 tryForce v = case v of
@@ -105,6 +109,10 @@ quote l t = case force t of
   VU s -> U s
   VLift q a -> Lift q (quote l a)
   VQuote q t -> quoteS q (quote l t)
+  VPolU -> PolU
+  VPol p -> Pol p
+  VRepU th -> RepU (quote l th)
+  VRep r -> Rep (bimapRepF (quote l) (quote l) r)
 
 nf :: Marker -> Env -> Tm -> Tm
 nf mrk env t = quote (Lvl (length env)) (eval env t)

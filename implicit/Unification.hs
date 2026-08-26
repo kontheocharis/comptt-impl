@@ -104,6 +104,10 @@ rename m pren v = go pren v
       VQuote q t -> case q of
         Omega -> quoteS q <$> go pren t
         Zero -> quoteS q <$> go (liftMarker pren) t
+      VPolU -> pure PolU
+      VPol p -> pure (Pol p)
+      VRepU th -> RepU <$> go pren th
+      VRep r -> Rep <$> bitraverseRepF (go pren) (go pren) r
 
 lams :: [(Stage, Mode, Icit)] -> Tm -> Tm
 lams = go (0 :: Int)
@@ -119,6 +123,13 @@ solve gamma m mrk sp rhs = do
   rhs <- rename m pren rhs
   let solution = eval [] $ lams (reverse binders) rhs
   modifyIORef' mcxt $ IM.insert (unMetaVar m) (Solved mrk solution)
+
+unifyRepF :: Lvl -> RepF Val Val -> RepF Val Val -> IO ()
+unifyRepF l r r' = case (r, r') of
+  (RUnit th, RUnit th') -> unify l th th'
+  (RProducer a, RProducer a') -> unify l a a'
+  (RArrow a b, RArrow a' b') -> unify l a a' >> unify l b b'
+  _ -> throwIO UnifyError
 
 unifySp :: Lvl -> Spine -> Spine -> IO ()
 unifySp l sp sp' = case (sp, sp') of
@@ -139,6 +150,10 @@ unify l t u = case (force t, force u) of
   (t, VLam _ s q i t') -> unify (l + 1) (vApp t (VVar l q) s q i) (t' $$ VVar l q)
   (VLam _ s q i t, t') -> unify (l + 1) (t $$ VVar l q) (vApp t' (VVar l q) s q i)
   (VU s, VU s') | s == s' -> pure ()
+  (VPolU, VPolU) -> pure ()
+  (VPol p, VPol p') | p == p' -> pure ()
+  (VRepU th, VRepU th') -> unify l th th'
+  (VRep r, VRep r') -> unifyRepF l r r'
   (VPi x s q i a b, VPi x' s' q' i' a' b')
     | s == s' && q == q' && i == i' -> unify l a a' >> unify (l + 1) (b $$ VVar l (stageMode s)) (b' $$ VVar l (stageMode s))
   (VLift q a, VLift q' a') | q == q' -> unify l a a'

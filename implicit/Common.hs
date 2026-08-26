@@ -15,8 +15,30 @@ type Name = String
 -- i ∈ {0, ω}
 data Mode = Zero | Omega deriving (Eq)
 
--- Which level of the 2LTT a term belongs to
+-- Object or meta level of the 2LTT
 data Stage = SObj | SMeta deriving (Eq)
+
+-- CBPV polarisation: positive = values, negative = computations
+data Polarity = Pos | Neg deriving (Eq)
+
+-- Functor for representations
+data RepF p a
+  = RUnit p
+  | RProducer a
+  | RArrow a a
+  deriving (Show, Functor, Foldable, Traversable)
+
+bimapRepF :: (p -> q) -> (a -> b) -> RepF p a -> RepF q b
+bimapRepF f g = \case
+  RUnit p -> RUnit (f p)
+  RProducer a -> RProducer (g a)
+  RArrow a b -> RArrow (g a) (g b)
+
+bitraverseRepF :: (Applicative f) => (p -> f q) -> (a -> f b) -> RepF p a -> f (RepF q b)
+bitraverseRepF f g = \case
+  RUnit p -> RUnit <$> f p
+  RProducer a -> RProducer <$> g a
+  RArrow a b -> RArrow <$> g a <*> g b
 
 -- The erasure mode for types in a given stage.
 -- Here `Omega` really means "erasure marker not necessary".
@@ -50,6 +72,10 @@ instance Show Mode where
 instance Show Stage where
   show SObj = "obj"
   show SMeta = "meta"
+
+instance Show Polarity where
+  show Pos = "+"
+  show Neg = "-"
 
 instance Show Icit where
   show Impl = "implicit"

@@ -68,6 +68,10 @@ go l env = \case
   Pi _ SMeta _ _ _ _ -> SDummy
   U SMeta -> SDummy
   Lift {} -> SDummy
+  PolU -> SDummy
+  Pol _ -> SDummy
+  RepU {} -> SDummy
+  Rep {} -> SDummy
 
 quoteO :: Lvl -> OTm -> Tm
 quoteO l = \case

@@ -53,7 +53,7 @@ prettyTm prec = go prec
 
     arrow :: Stage -> String
     arrow SObj = " → "
-    arrow SMeta = " ⇒ "
+    arrow SMeta = " →' "
 
     piBind ns x s q Expl a = showParen True ((mode s q ++) . (x ++) . (" : " ++) . go letp ns a)
     piBind ns x s q Impl a = bracket ((mode s q ++) . (x ++) . (" : " ++) . go letp ns a)
@@ -80,7 +80,7 @@ prettyTm prec = go prec
           goLam ns t =
             (". " ++) . go letp ns t
       U SObj -> ("U" ++)
-      U SMeta -> ("UU" ++)
+      U SMeta -> ("U'" ++)
       Lift q a -> par p appp $ (liftSym q ++) . go atomp ns a
       Splice _ t -> par p appp $ ("~" ++) . go atomp ns t
       Quote _ t -> ("<" ++) . go letp ns t . (">" ++)
@@ -103,6 +103,12 @@ prettyTm prec = go prec
             . go letp (ns :> x) u
       Meta m _ -> (("?" ++ show m) ++)
       InsertedMeta m _ bds -> goBDS p ns m bds
+      PolU -> ("Pol" ++)
+      Pol th -> (show th ++)
+      RepU th -> par p appp $ ("Rep " ++) . go atomp ns th
+      Rep (RUnit th) -> par p appp $ ("* " ++) . go atomp ns th
+      Rep (RProducer a) -> par p appp $ ("▹ " ++) . go atomp ns a
+      Rep (RArrow a b) -> par p pip $ go appp ns a . (" ⇒ " ++) . go pip ns b
 
 showTm0 :: Tm -> String
 showTm0 t = prettyTm 0 [] t []
