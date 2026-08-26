@@ -101,6 +101,9 @@ check cxt s t a = case (t, force a) of
     let ~vt = eval (env cxt) t
     u <- check (define cxt x s' q vt va) s u a'
     pure (Let x s' q a t u)
+  (P.Quote t, VLift q a) -> do
+    when (s /= SMeta) (elabError cxt $ StageMismatch s SMeta)
+    Quote q <$> checkIn cxt SObj q t a
   (P.Hole, a) ->
     freshMeta cxt s Omega
   (t, expected) -> do
@@ -174,6 +177,21 @@ infer cxt s = \case
   P.Lift q a -> do
     a <- checkIn cxt SObj Zero a (VU SObj)
     pure (Lift q a, VU SMeta)
+  P.Quote t -> do
+    when (s /= SMeta) (elabError cxt $ StageMismatch s SMeta)
+    (t, a) <- inferIn cxt SObj Omega t
+    pure (Quote Omega t, VLift Omega a)
+  P.Splice t -> do
+    when (s /= SObj) (elabError cxt $ StageMismatch s SObj)
+    (t, tty) <- infer cxt SMeta t
+    case force tty of
+      VLift q a -> do
+        when (q == Zero && marker cxt /= Present) (elabError cxt $ InsufficientMode)
+        pure (Splice q t, a)
+      tty -> do
+        a <- eval (env cxt) <$> freshMeta cxt SObj Zero
+        unifyCatch cxt tty (VLift Omega a)
+        pure (Splice Omega t, a)
   P.Pi x q i s' a b -> do
     checkBinderMode cxt s' q
     when (s' == SObj && marker cxt /= Present) (elabError cxt $ InsufficientMode)

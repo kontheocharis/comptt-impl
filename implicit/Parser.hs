@@ -63,12 +63,20 @@ pLift = do
   ws
   Lift q <$> pAtom
 
+pQuote :: Parser Tm
+pQuote = Quote <$> (char '<' *> pTm <* char '>')
+
+pSplice :: Parser Tm
+pSplice = Splice <$> (char '~' *> pAtom)
+
 pAtom :: Parser Tm
 pAtom =
   withPos
     ( (Var <$> pIdent)
         <|> pUniverse
         <|> pLift
+        <|> pQuote
+        <|> pSplice
         <|> (Hole <$ char '_')
     )
     <|> parens pTm

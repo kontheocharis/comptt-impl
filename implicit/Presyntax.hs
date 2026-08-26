@@ -9,6 +9,8 @@ data Tm
   | U Stage -- U | UU
   | Pi Name Mode Icit Stage Tm Tm -- (i x : A) -> B | (i x : A) => B
   | Lift Mode Tm -- ^A | ^0 A
+  | Quote Tm -- <t>
+  | Splice Tm -- ~t
   | Let Name Stage Mode Tm Tm Tm -- let i x : A = t; u | letm x : A = t; u
   | SrcPos SourcePos Tm -- source position for error reporting
   | Hole -- _
