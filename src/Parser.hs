@@ -41,12 +41,16 @@ pRepArrowSym = void (symbol "⇒" <|> symbol "=>")
 
 pBind = pIdent <|> symbol "_"
 
+identChar :: Char -> Bool
+identChar c = isAlphaNum c || c == '\''
+
 keyword :: String -> Bool
 keyword x =
   x == "let"
     || x == "letm"
     || x == "λ"
     || x == "U"
+    || x == "U'"
     || x == "Pol"
     || x == "Rep"
     || x == "return"
@@ -54,14 +58,14 @@ keyword x =
 
 pIdent :: Parser Name
 pIdent = try $ do
-  x <- takeWhile1P Nothing isAlphaNum
-  guard (not (keyword x))
+  x <- takeWhile1P Nothing identChar
+  guard (not (keyword x) && take 1 x /= "'")
   x <$ ws
 
 pKeyword :: String -> Parser ()
 pKeyword kw = do
   C.string kw
-  (takeWhile1P Nothing isAlphaNum *> empty) <|> ws
+  (takeWhile1P Nothing identChar *> empty) <|> ws
 
 pUniverse :: Parser Tm
 pUniverse =

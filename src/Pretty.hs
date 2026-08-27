@@ -90,7 +90,7 @@ prettyTm prec = go prec
       Pi (fresh ns -> x) s q i _ a b -> par p pip $ piBind ns x s q i a . goPi s (ns :> x) b
         where
           goPi _ ns (Pi (fresh ns -> x) s' q i _ a b)
-            | x /= "_" = piBind ns x s' q i a . goPi s' (ns :> x) b
+            | x /= "_" = (' ' :) . piBind ns x s' q i a . goPi s' (ns :> x) b
           goPi s ns b = (arrow s ++) . go pip ns b
       Let (fresh ns -> x) s q a t u ->
         par p letp $
