@@ -116,5 +116,5 @@ quote l t = case force t of
   VRepU th -> RepU (quote l th)
   VRep r -> Rep (bimapRepF (quote l) (quote l) r)
 
-nf :: Marker -> Env -> Tm -> Tm
-nf mrk env t = quote (Lvl (length env)) (eval env t)
+nf :: Env -> Tm -> Tm
+nf env t = quote (Lvl (length env)) (eval env t)

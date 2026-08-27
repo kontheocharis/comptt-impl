@@ -55,10 +55,6 @@ ext Present _ = Present
 ext _ Present = Present
 ext Absent Absent = Absent
 
-getMarker :: Mode -> Marker
-getMarker Zero = Present
-getMarker Omega = Absent
-
 ----
 
 data Icit = Impl | Expl deriving (Eq)
