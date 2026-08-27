@@ -94,12 +94,19 @@ rename m pren v = go pren v
             goSp pren (Var (lvl2Ix (dom pren) x') md) sp
       VLam x s q i t ->
         Lam x s q i <$> go (lift q pren) (t $$ VVar (cod pren) q)
-      VPi x s q i a b -> do
+      VPi x s q i r a b -> do
         encounterU pren
-        (Pi x s q i <$> go pren a <*> go (lift (stageMode s) pren) (b $$ VVar (cod pren) (stageMode s)))
-      VU s -> do
+        (Pi x s q i <$> go pren r <*> go pren a <*> go (lift (stageMode s) pren) (b $$ VVar (cod pren) (stageMode s)))
+      VProducer a -> do
         encounterU pren
-        pure (U s)
+        Producer <$> go pren a
+      VRet t -> Ret <$> go pren t
+      VUMeta -> do
+        encounterU pren
+        pure UMeta
+      VUObj th a -> do
+        encounterU pren
+        UObj <$> go pren th <*> go pren a
       VLift q a -> Lift q <$> go (liftMarker pren) a
       VQuote q t -> case q of
         Omega -> quoteS q <$> go pren t
@@ -149,13 +156,17 @@ unify l t u = case (force t, force u) of
   (t, VFlex m' mrk (sp' :> ESplice q)) -> solve l m' mrk sp' (vQuote q t)
   (t, VLam _ s q i t') -> unify (l + 1) (vApp t (VVar l q) s q i) (t' $$ VVar l q)
   (VLam _ s q i t, t') -> unify (l + 1) (t $$ VVar l q) (vApp t' (VVar l q) s q i)
-  (VU s, VU s') | s == s' -> pure ()
+  (VProducer a, VProducer a') -> unify l a a'
+  (VRet t, VRet t') -> unify l t t'
+  (VUMeta, VUMeta) -> pure ()
+  (VUObj th a, VUObj th' a') -> unify l th th' >> unify l a a'
   (VPolU, VPolU) -> pure ()
   (VPol p, VPol p') | p == p' -> pure ()
   (VRepU th, VRepU th') -> unify l th th'
   (VRep r, VRep r') -> unifyRepF l r r'
-  (VPi x s q i a b, VPi x' s' q' i' a' b')
-    | s == s' && q == q' && i == i' -> unify l a a' >> unify (l + 1) (b $$ VVar l (stageMode s)) (b' $$ VVar l (stageMode s))
+  (VPi x s q i r a b, VPi x' s' q' i' r' a' b')
+    | s == s' && q == q' && i == i' ->
+        unify l r r' >> unify l a a' >> unify (l + 1) (b $$ VVar l (stageMode s)) (b' $$ VVar l (stageMode s))
   (VLift q a, VLift q' a') | q == q' -> unify l a a'
   (VQuote q t, VQuote q' t') | q == q' -> unify l t t'
   (VQuote q t, t') -> unify l t (vSplice q t')

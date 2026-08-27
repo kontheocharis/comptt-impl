@@ -63,7 +63,7 @@ getMarker Omega = Absent
 
 data Icit = Impl | Expl deriving (Eq)
 
-data BD = Bound Stage Mode | Defined deriving (Show)
+data BD = Bound Mode | Defined deriving (Show)
 
 instance Show Mode where
   show Zero = "0"

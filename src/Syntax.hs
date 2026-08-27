@@ -14,8 +14,11 @@ data Tm
   = Var Ix Mode
   | Lam Name Stage Mode Icit Tm
   | App Tm Tm Stage Mode Icit
-  | U Stage
-  | Pi Name Stage Mode Icit Ty Ty
+  | UMeta
+  | UObj Pol Rep
+  | Pi Name Stage Mode Icit Rep Ty Ty
+  | Producer Ty
+  | Ret Tm
   | Let Name Stage Mode Ty Tm Tm
   | Meta MetaVar Marker
   | InsertedMeta MetaVar Marker [BD]
@@ -27,6 +30,9 @@ data Tm
   | RepU Pol
   | Rep (RepF Pol Rep)
   deriving (Show)
+
+unitRep :: Rep
+unitRep = Rep (RUnit (Pol Pos))
 
 quoteS :: Mode -> Tm -> Tm
 quoteS _ (Splice _ t) = t

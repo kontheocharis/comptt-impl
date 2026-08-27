@@ -24,8 +24,11 @@ data Val
   = VFlex MetaVar Marker Spine
   | VRigid Lvl Mode Spine
   | VLam Name Stage Mode Icit {-# UNPACK #-} Closure
-  | VPi Name Stage Mode Icit ~VTy {-# UNPACK #-} Closure
-  | VU Stage
+  | VPi Name Stage Mode Icit ~VRep ~VTy {-# UNPACK #-} Closure
+  | VProducer VTy
+  | VRet Val
+  | VUMeta
+  | VUObj VPol VRep
   | VLift Mode VTy
   | VQuote Mode Val
   | VPolU
@@ -40,3 +43,6 @@ pattern VVar x m = VRigid x m []
 
 pattern VMeta :: MetaVar -> Marker -> Val
 pattern VMeta m mrk = VFlex m mrk []
+
+vUnitRep :: VRep
+vUnitRep = VRep (RUnit (VPol Pos))

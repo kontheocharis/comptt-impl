@@ -3,7 +3,6 @@ module Evaluation
     quote,
     eval,
     nf,
-    tryForce,
     force,
     ix2Lvl,
     lvl2Ix,
@@ -62,7 +61,7 @@ vMeta m mrk = case lookupMeta m of
 vAppBDs :: Env -> Val -> [BD] -> Val
 vAppBDs env ~v bds = case (env, bds) of
   ([], []) -> v
-  (env :> t, bds :> Bound s q) -> vApp (vAppBDs env v bds) t s q Expl
+  (env :> t, bds :> Bound q) -> vApp (vAppBDs env v bds) t SMeta q Expl
   (env :> t, bds :> Defined) -> vAppBDs env v bds
   _ -> error "impossible"
 
@@ -71,9 +70,12 @@ eval env t = case t of
   Var x _ -> env !! unIx x
   App t u s q i -> vApp (eval env t) (eval env u) s q i
   Lam x s q i t -> VLam x s q i (Closure env t)
-  Pi x s q i a b -> VPi x s q i (eval env a) (Closure env b)
+  Pi x s q i r a b -> VPi x s q i (eval env r) (eval env a) (Closure env b)
+  Producer a -> VProducer (eval env a)
+  Ret t -> VRet (eval env t)
   Let _ _ _ _ t u -> eval (env :> eval env t) u
-  U s -> VU s
+  UMeta -> VUMeta
+  UObj th a -> VUObj (eval env th) (eval env a)
   Meta m mrk -> vMeta m mrk
   InsertedMeta m mrk bds -> vAppBDs env (vMeta m mrk) bds
   Lift q a -> VLift q (eval env a)
@@ -84,15 +86,12 @@ eval env t = case t of
   RepU th -> VRepU (eval env th)
   Rep r -> VRep (bimapRepF (eval env) (eval env) r)
 
-tryForce :: Val -> Maybe Val
-tryForce v = case v of
-  VFlex m mrk sp -> case lookupMeta m of
-    Solved _ t -> tryForce (vAppSp t sp)
-    Unsolved _ -> Nothing
-  t -> Just t
-
 force :: Val -> Val
-force t = fromMaybe t (tryForce t)
+force t = case t of
+  VFlex m _ sp -> case lookupMeta m of
+    Solved _ v -> force (vAppSp v sp)
+    Unsolved _ -> t
+  t -> t
 
 quoteSp :: Lvl -> Tm -> Spine -> Tm
 quoteSp l t = \case
@@ -105,8 +104,11 @@ quote l t = case force t of
   VFlex m mrk sp -> quoteSp l (Meta m mrk) sp
   VRigid x md sp -> quoteSp l (Var (lvl2Ix l x) md) sp
   VLam x s q i t -> Lam x s q i (quote (l + 1) (t $$ VVar l q))
-  VPi x s q i a b -> Pi x s q i (quote l a) (quote (l + 1) (b $$ VVar l (stageMode s)))
-  VU s -> U s
+  VPi x s q i r a b -> Pi x s q i (quote l r) (quote l a) (quote (l + 1) (b $$ VVar l (stageMode s)))
+  VProducer a -> Producer (quote l a)
+  VRet t -> Ret (quote l t)
+  VUMeta -> UMeta
+  VUObj th a -> UObj (quote l th) (quote l a)
   VLift q a -> Lift q (quote l a)
   VQuote q t -> quoteS q (quote l t)
   VPolU -> PolU

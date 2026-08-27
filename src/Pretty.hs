@@ -64,7 +64,7 @@ prettyTm prec = go prec
     goBDS :: Int -> [Name] -> MetaVar -> [BD] -> ShowS
     goBDS p ns m bds = case (ns, bds) of
       ([], []) -> (("?" ++ show m) ++)
-      (ns :> n, bds :> Bound _ _) -> par p appp $ goBDS appp ns m bds . (' ' :) . (n ++)
+      (ns :> n, bds :> Bound _) -> par p appp $ goBDS appp ns m bds . (' ' :) . (n ++)
       (ns :> n, bds :> Defined) -> goBDS appp ns m bds
       _ -> error "impossible"
 
@@ -79,15 +79,17 @@ prettyTm prec = go prec
             (' ' :) . lamBind x i . goLam (ns :> x) t
           goLam ns t =
             (". " ++) . go letp ns t
-      U SObj -> ("U" ++)
-      U SMeta -> ("U'" ++)
+      Producer a -> par p appp $ ("▶ " ++) . go atomp ns a
+      Ret t -> par p appp $ ("return " ++) . go atomp ns t
+      UObj _ a -> par p appp $ ("U " ++) . go atomp ns a
+      UMeta -> ("U'" ++)
       Lift q a -> par p appp $ (liftSym q ++) . go atomp ns a
       Splice _ t -> par p appp $ ("~" ++) . go atomp ns t
       Quote _ t -> ("<" ++) . go letp ns t . (">" ++)
-      Pi "_" s Omega Expl a b -> par p pip $ go appp ns a . (arrow s ++) . go pip (ns :> "_") b
-      Pi (fresh ns -> x) s q i a b -> par p pip $ piBind ns x s q i a . goPi s (ns :> x) b
+      Pi "_" s Omega Expl _ a b -> par p pip $ go appp ns a . (arrow s ++) . go pip (ns :> "_") b
+      Pi (fresh ns -> x) s q i _ a b -> par p pip $ piBind ns x s q i a . goPi s (ns :> x) b
         where
-          goPi _ ns (Pi (fresh ns -> x) s' q i a b)
+          goPi _ ns (Pi (fresh ns -> x) s' q i _ a b)
             | x /= "_" = piBind ns x s' q i a . goPi s' (ns :> x) b
           goPi s ns b = (arrow s ++) . go pip ns b
       Let (fresh ns -> x) s q a t u ->
@@ -106,7 +108,7 @@ prettyTm prec = go prec
       PolU -> ("Pol" ++)
       Pol th -> (show th ++)
       RepU th -> par p appp $ ("Rep " ++) . go atomp ns th
-      Rep (RUnit th) -> par p appp $ ("* " ++) . go atomp ns th
+      Rep (RUnit th) -> par p appp $ ("unit " ++) . go atomp ns th
       Rep (RProducer a) -> par p appp $ ("▹ " ++) . go atomp ns a
       Rep (RArrow a b) -> par p pip $ go appp ns a . (" ⇒ " ++) . go pip ns b
 

@@ -27,5 +27,7 @@ extract = go (ExEnv 0 0 [])
       OLam x Zero i t -> go (extend env Zero) t
       OLet x Omega _ t u -> CLet x (go env t) (go (extend env Omega) u)
       OLet x Zero _ t u -> go (extend env Zero) u
+      ORet t -> go env t
       OPi {} -> error "extracting Pi"
-      OU -> error "extracting U"
+      OProducer {} -> error "extracting Producer"
+      OU {} -> error "extracting U"

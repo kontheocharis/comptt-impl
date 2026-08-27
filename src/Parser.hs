@@ -49,6 +49,8 @@ keyword x =
     || x == "U"
     || x == "Pol"
     || x == "Rep"
+    || x == "return"
+    || x == "unit"
 
 pIdent :: Parser Name
 pIdent = try $ do
@@ -63,7 +65,8 @@ pKeyword kw = do
 
 pUniverse :: Parser Tm
 pUniverse =
-  try (U SMeta <$ pKeyword "U'") <|> (U SObj <$ pKeyword "U")
+  try (UMeta <$ pKeyword "U'")
+    <|> (UObj <$> (pKeyword "U" *> pAtom))
 
 pPolU :: Parser Tm
 pPolU = PolU <$ try (pKeyword "Pol")
@@ -77,10 +80,16 @@ pRepU :: Parser Tm
 pRepU = RepU <$> (try (pKeyword "Rep") *> pAtom)
 
 pRUnit :: Parser Tm
-pRUnit = Rep . RUnit <$> (symbol "*" *> pAtom)
+pRUnit = Rep . RUnit <$> (try (pKeyword "unit") *> pAtom)
 
 pRProducer :: Parser Tm
 pRProducer = Rep . RProducer <$> ((symbol "▹" <|> symbol "|>") *> pAtom)
+
+pProducer :: Parser Tm
+pProducer = Producer <$> (try (symbol "▶" <|> symbol "|>>") *> pAtom)
+
+pRet :: Parser Tm
+pRet = Ret <$> (try (pKeyword "return") *> pAtom)
 
 pLift :: Parser Tm
 pLift = do
@@ -104,7 +113,9 @@ pAtom =
         <|> pPolLit
         <|> pRepU
         <|> pRUnit
+        <|> pProducer
         <|> pRProducer
+        <|> pRet
         <|> pLift
         <|> pQuote
         <|> pSplice
