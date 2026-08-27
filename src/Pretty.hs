@@ -64,21 +64,33 @@ prettyTm prec = go prec
     goBDS :: Int -> [Name] -> MetaVar -> [BD] -> ShowS
     goBDS p ns m bds = case (ns, bds) of
       ([], []) -> (("?" ++ show m) ++)
-      (ns :> n, bds :> Bound _) -> par p appp $ goBDS appp ns m bds . (' ' :) . (n ++)
+      (ns :> n, bds :> Bound _ _) -> par p appp $ goBDS appp ns m bds . (' ' :) . (n ++)
       (ns :> n, bds :> Defined) -> goBDS appp ns m bds
       _ -> error "impossible"
 
+    goLam :: [Name] -> Tm -> ShowS
+    goLam ns (LamObj (fresh ns -> x) _ i t) = (' ' :) . lamBind x i . goLam (ns :> x) t
+    goLam ns (LamMeta (fresh ns -> x) i t) = (' ' :) . lamBind x i . goLam (ns :> x) t
+    goLam ns t = (". " ++) . go letp ns t
+
+    goPi :: Stage -> [Name] -> Tm -> ShowS
+    goPi _ ns (PiObj (fresh ns -> x) q i _ a b)
+      | x /= "_" = (' ' :) . piBind ns x SObj q i a . goPi SObj (ns :> x) b
+    goPi _ ns (PiMeta (fresh ns -> x) i a b)
+      | x /= "_" = (' ' :) . piBind ns x SMeta Omega i a . goPi SMeta (ns :> x) b
+    goPi s ns b = (arrow s ++) . go pip ns b
+
+    goApp :: Int -> [Name] -> Tm -> Tm -> Icit -> ShowS
+    goApp p ns t u Expl = par p appp $ go appp ns t . (' ' :) . go atomp ns u
+    goApp p ns t u Impl = par p appp $ go appp ns t . (' ' :) . bracket (go letp ns u)
+
     go :: Int -> [Name] -> Tm -> ShowS
     go p ns = \case
-      Var (Ix x) _ -> ((ns !! x) ++)
-      App t u _ _ Expl -> par p appp $ go appp ns t . (' ' :) . go atomp ns u
-      App t u _ _ Impl -> par p appp $ go appp ns t . (' ' :) . bracket (go letp ns u)
-      Lam (fresh ns -> x) _ q i t -> par p letp $ ("λ " ++) . lamBind x i . goLam (ns :> x) t
-        where
-          goLam ns (Lam (fresh ns -> x) _ q i t) =
-            (' ' :) . lamBind x i . goLam (ns :> x) t
-          goLam ns t =
-            (". " ++) . go letp ns t
+      Var (Ix x) -> ((ns !! x) ++)
+      AppObj t u _ i -> goApp p ns t u i
+      AppMeta t u i -> goApp p ns t u i
+      LamObj (fresh ns -> x) _ i t -> par p letp $ ("λ " ++) . lamBind x i . goLam (ns :> x) t
+      LamMeta (fresh ns -> x) i t -> par p letp $ ("λ' " ++) . lamBind x i . goLam (ns :> x) t
       Producer a -> par p appp $ ("▶ " ++) . go atomp ns a
       Ret t -> par p appp $ ("return " ++) . go atomp ns t
       UObj _ a -> par p appp $ ("U " ++) . go atomp ns a
@@ -86,12 +98,10 @@ prettyTm prec = go prec
       Lift q a -> par p appp $ (liftSym q ++) . go atomp ns a
       Splice _ t -> par p appp $ ("~" ++) . go atomp ns t
       Quote _ t -> ("<" ++) . go letp ns t . (">" ++)
-      Pi "_" s Omega Expl _ a b -> par p pip $ go appp ns a . (arrow s ++) . go pip (ns :> "_") b
-      Pi (fresh ns -> x) s q i _ a b -> par p pip $ piBind ns x s q i a . goPi s (ns :> x) b
-        where
-          goPi _ ns (Pi (fresh ns -> x) s' q i _ a b)
-            | x /= "_" = (' ' :) . piBind ns x s' q i a . goPi s' (ns :> x) b
-          goPi s ns b = (arrow s ++) . go pip ns b
+      PiObj "_" Omega Expl _ a b -> par p pip $ go appp ns a . (arrow SObj ++) . go pip (ns :> "_") b
+      PiMeta "_" Expl a b -> par p pip $ go appp ns a . (arrow SMeta ++) . go pip (ns :> "_") b
+      PiObj (fresh ns -> x) q i _ a b -> par p pip $ piBind ns x SObj q i a . goPi SObj (ns :> x) b
+      PiMeta (fresh ns -> x) i a b -> par p pip $ piBind ns x SMeta Omega i a . goPi SMeta (ns :> x) b
       Let (fresh ns -> x) s q a t u ->
         par p letp $
           (letKw s ++)

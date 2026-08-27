@@ -6,7 +6,8 @@ import Syntax
 type Env = [Val]
 
 data Elim
-  = EApp Val Stage Mode Icit
+  = EAppObj Val Mode Icit
+  | EAppMeta Val Icit
   | ESplice Mode
   deriving (Show)
 
@@ -22,9 +23,12 @@ type VPol = Val
 
 data Val
   = VFlex MetaVar Marker Spine
-  | VRigid Lvl Mode Spine
-  | VLam Name Stage Mode Icit {-# UNPACK #-} Closure
-  | VPi Name Stage Mode Icit ~VRep ~VTy {-# UNPACK #-} Closure
+  | VRigidObj Lvl Mode Spine -- records the original mode the variable was bound in
+  | VRigidMeta Lvl Spine
+  | VLamObj Name Mode Icit {-# UNPACK #-} Closure
+  | VLamMeta Name Icit {-# UNPACK #-} Closure
+  | VPiObj Name Mode Icit ~VRep ~VTy {-# UNPACK #-} Closure
+  | VPiMeta Name Icit ~VTy {-# UNPACK #-} Closure
   | VProducer VTy
   | VRet Val
   | VUMeta
@@ -37,12 +41,24 @@ data Val
   | VRep (RepF VPol VRep)
   deriving (Show)
 
--- Pattern for variables x0 or xω
-pattern VVar :: Lvl -> Mode -> Val
-pattern VVar x m = VRigid x m []
+pattern VVarObj :: Lvl -> Mode -> Val
+pattern VVarObj x m = VRigidObj x m []
+
+pattern VVarMeta :: Lvl -> Val
+pattern VVarMeta x = VRigidMeta x []
+
+vVar :: Lvl -> Stage -> Mode -> Val
+vVar x SObj q = VVarObj x q
+vVar x SMeta _ = VVarMeta x
 
 pattern VMeta :: MetaVar -> Marker -> Val
 pattern VMeta m mrk = VFlex m mrk []
 
 vUnitRep :: VRep
 vUnitRep = VRep (RUnit (VPol Pos))
+
+viewPi :: Val -> Maybe (Name, Stage, Mode, Icit, VTy, Closure)
+viewPi = \case
+  VPiObj x q i _ a b -> Just (x, SObj, q, i, a, b)
+  VPiMeta x i a b -> Just (x, SMeta, Omega, i, a, b)
+  _ -> Nothing

@@ -6,7 +6,8 @@ module Evaluation
     force,
     ix2Lvl,
     lvl2Ix,
-    vApp,
+    vAppObj,
+    vAppMeta,
     vQuote,
     vSplice,
   )
@@ -23,29 +24,38 @@ infixl 8 $$
 ($$) :: Closure -> Val -> Val
 ($$) (Closure env t) ~u = eval (env :> u) t
 
-vApp :: Val -> Val -> Stage -> Mode -> Icit -> Val
-vApp t ~u s q i = case t of
-  VLam _ _ _ _ t -> t $$ u
-  VFlex m mrk sp -> VFlex m mrk (sp :> EApp u s q i)
-  VRigid x md sp -> VRigid x md (sp :> EApp u s q i)
+vAppObj :: Val -> Val -> Mode -> Icit -> Val
+vAppObj t ~u q i = case t of
+  VLamObj _ _ _ b -> b $$ u
+  VFlex m mrk sp -> VFlex m mrk (sp :> EAppObj u q i)
+  VRigidObj x md sp -> VRigidObj x md (sp :> EAppObj u q i)
+  VRigidMeta x sp -> VRigidMeta x (sp :> EAppObj u q i)
+  _ -> error "impossible"
+
+vAppMeta :: Val -> Val -> Icit -> Val
+vAppMeta t ~u i = case t of
+  VLamMeta _ _ b -> b $$ u
+  VFlex m mrk sp -> VFlex m mrk (sp :> EAppMeta u i)
+  VRigidMeta x sp -> VRigidMeta x (sp :> EAppMeta u i)
   _ -> error "impossible"
 
 vSplice :: Mode -> Val -> Val
 vSplice q t = case t of
   VQuote _ t -> t
   VFlex m mrk sp -> VFlex m mrk (sp :> ESplice q)
-  VRigid x md sp -> VRigid x md (sp :> ESplice q)
+  VRigidMeta x sp -> VRigidMeta x (sp :> ESplice q)
   _ -> error "impossible"
 
 vQuote :: Mode -> Val -> Val
 vQuote q t = case t of
   VFlex m mrk (sp :> ESplice _) -> VFlex m mrk sp
-  VRigid x md (sp :> ESplice _) -> VRigid x md sp
+  VRigidMeta x (sp :> ESplice _) -> VRigidMeta x sp
   t -> VQuote q t
 
 vElim :: Val -> Elim -> Val
 vElim t = \case
-  EApp u s q i -> vApp t u s q i
+  EAppObj u q i -> vAppObj t u q i
+  EAppMeta u i -> vAppMeta t u i
   ESplice q -> vSplice q t
 
 vAppSp :: Val -> Spine -> Val
@@ -61,16 +71,20 @@ vMeta m mrk = case lookupMeta m of
 vAppBDs :: Env -> Val -> [BD] -> Val
 vAppBDs env ~v bds = case (env, bds) of
   ([], []) -> v
-  (env :> t, bds :> Bound q) -> vApp (vAppBDs env v bds) t SMeta q Expl
+  (env :> t, bds :> Bound SObj q) -> vAppMeta (vAppBDs env v bds) (vQuote q t) Expl
+  (env :> t, bds :> Bound SMeta _) -> vAppMeta (vAppBDs env v bds) t Expl
   (env :> t, bds :> Defined) -> vAppBDs env v bds
   _ -> error "impossible"
 
 eval :: Env -> Tm -> Val
 eval env t = case t of
-  Var x _ -> env !! unIx x
-  App t u s q i -> vApp (eval env t) (eval env u) s q i
-  Lam x s q i t -> VLam x s q i (Closure env t)
-  Pi x s q i r a b -> VPi x s q i (eval env r) (eval env a) (Closure env b)
+  Var x -> env !! unIx x
+  AppObj t u q i -> vAppObj (eval env t) (eval env u) q i
+  AppMeta t u i -> vAppMeta (eval env t) (eval env u) i
+  LamObj x q i t -> VLamObj x q i (Closure env t)
+  LamMeta x i t -> VLamMeta x i (Closure env t)
+  PiObj x q i r a b -> VPiObj x q i (eval env r) (eval env a) (Closure env b)
+  PiMeta x i a b -> VPiMeta x i (eval env a) (Closure env b)
   Producer a -> VProducer (eval env a)
   Ret t -> VRet (eval env t)
   Let _ _ _ _ t u -> eval (env :> eval env t) u
@@ -96,15 +110,19 @@ force t = case t of
 quoteSp :: Lvl -> Tm -> Spine -> Tm
 quoteSp l t = \case
   [] -> t
-  sp :> EApp u s q i -> App (quoteSp l t sp) (quote l u) s q i
+  sp :> EAppObj u q i -> AppObj (quoteSp l t sp) (quote l u) q i
+  sp :> EAppMeta u i -> AppMeta (quoteSp l t sp) (quote l u) i
   sp :> ESplice q -> spliceS q (quoteSp l t sp)
 
 quote :: Lvl -> Val -> Tm
 quote l t = case force t of
   VFlex m mrk sp -> quoteSp l (Meta m mrk) sp
-  VRigid x md sp -> quoteSp l (Var (lvl2Ix l x) md) sp
-  VLam x s q i t -> Lam x s q i (quote (l + 1) (t $$ VVar l q))
-  VPi x s q i r a b -> Pi x s q i (quote l r) (quote l a) (quote (l + 1) (b $$ VVar l (stageMode s)))
+  VRigidObj x _ sp -> quoteSp l (Var (lvl2Ix l x)) sp
+  VRigidMeta x sp -> quoteSp l (Var (lvl2Ix l x)) sp
+  VLamObj x q i t -> LamObj x q i (quote (l + 1) (t $$ VVarObj l q))
+  VLamMeta x i t -> LamMeta x i (quote (l + 1) (t $$ VVarMeta l))
+  VPiObj x q i r a b -> PiObj x q i (quote l r) (quote l a) (quote (l + 1) (b $$ VVarObj l Zero))
+  VPiMeta x i a b -> PiMeta x i (quote l a) (quote (l + 1) (b $$ VVarMeta l))
   VProducer a -> Producer (quote l a)
   VRet t -> Ret (quote l t)
   VUMeta -> UMeta

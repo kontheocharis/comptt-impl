@@ -43,12 +43,12 @@ emptyCxt p = Cxt [] 0 [] [] p Absent
 -- Γ ↦ Γ, i x : A
 bind :: Cxt -> Name -> Stage -> Mode -> VTy -> Cxt
 bind (Cxt env l types bds pos md) x s q ~a =
-  Cxt (env :> VVar l q) (l + 1) (types :> (x, Source, s, q, a)) (bds :> Bound q) pos md
+  Cxt (env :> vVar l s q) (l + 1) (types :> (x, Source, s, q, a)) (bds :> Bound s q) pos md
 
 -- Γ ↦ Γ, i x : A
 newBinder :: Cxt -> Name -> Stage -> Mode -> VTy -> Cxt
 newBinder (Cxt env l types bds pos md) x s q ~a =
-  Cxt (env :> VVar l q) (l + 1) (types :> (x, Inserted, s, q, a)) (bds :> Bound q) pos md
+  Cxt (env :> vVar l s q) (l + 1) (types :> (x, Inserted, s, q, a)) (bds :> Bound s q) pos md
 
 -- Γ ↦ Γ, i x := t
 define :: Cxt -> Name -> Stage -> Mode -> Val -> VTy -> Cxt

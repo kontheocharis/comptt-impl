@@ -21,6 +21,7 @@ data ElabError
   = NameNotInScope Name
   | CantUnify Tm Tm UnifyError
   | InferNamedLam
+  | InferObjLam
   | NoNamedImplicitArg Name
   | IcitMismatch Icit Icit
   | InsufficientMode
@@ -68,6 +69,8 @@ displayError file (Error ps e) = do
             )
           InferNamedLam ->
             "Cannot infer type for lambda with named argument"
+          InferObjLam ->
+            "Cannot infer the type of an object-level lambda"
           NoNamedImplicitArg name ->
             "No named implicit argument with name " ++ name
           IcitMismatch i i' ->

@@ -54,30 +54,44 @@ insert' :: Cxt -> IO (Tm, VTy) -> IO (Tm, VTy)
 insert' cxt act = go =<< act
   where
     go (t, va) = case force va of
-      VPi x s q Impl _ a b -> do
+      va | Just (x, s, q, Impl, a, b) <- viewPi va -> do
         m <- freshMeta cxt s q
         let mv = eval (env cxt) m
-        go (App t m s q Impl, b $$ mv)
+        go (mkApp t m s q Impl, b $$ mv)
       va -> pure (t, va)
+
+mkLam :: Name -> Stage -> Mode -> Icit -> Tm -> Tm
+mkLam x SObj q i = LamObj x q i
+mkLam x SMeta _ i = LamMeta x i
+
+mkApp :: Tm -> Tm -> Stage -> Mode -> Icit -> Tm
+mkApp t u SObj q i = AppObj t u q i
+mkApp t u SMeta _ i = AppMeta t u i
+
+isImplLam :: Tm -> Bool
+isImplLam = \case
+  LamObj _ _ Impl _ -> True
+  LamMeta _ Impl _ -> True
+  _ -> False
 
 insert :: Cxt -> IO (Tm, VTy) -> IO (Tm, VTy)
 insert cxt act =
   act >>= \case
-    (t@(Lam _ _ q Impl _), va) -> pure (t, va)
+    (t, va) | isImplLam t -> pure (t, va)
     (t, va) -> insert' cxt (pure (t, va))
 
 insertUntilName :: Cxt -> Name -> IO (Tm, VTy) -> IO (Tm, VTy)
 insertUntilName cxt name act = go =<< act
   where
     go (t, va) = case force va of
-      va@(VPi x s q Impl _ a b) -> do
+      va | Just (x, s, q, Impl, a, b) <- viewPi va -> do
         if x == name
           then
             pure (t, va)
           else do
             m <- freshMeta cxt s q
             let mv = eval (env cxt) m
-            go (App t m s q Impl, b $$ mv)
+            go (mkApp t m s q Impl, b $$ mv)
       _ -> elabError cxt $ NoNamedImplicitArg name
 
 withMarker :: Stage -> Mode -> Cxt -> Cxt
@@ -127,11 +141,11 @@ check :: Cxt -> Stage -> P.Tm -> VTy -> IO Tm
 check cxt s t a = case (t, force a) of
   (P.SrcPos pos t, a) ->
     check (cxt {pos = pos}) s t a
-  (P.Lam x i t, VPi x' s' q' i' _ a b) | either (\x -> x == x' && i' == Impl) (== i') i -> do
+  (P.Lam x i t, viewPi -> Just (x', s', q', i', a, b)) | either (\x -> x == x' && i' == Impl) (== i') i -> do
     -- Here we must wrap the variable in ↓ if the q = ω, because of the lambda rule.
-    Lam x s' q' i' <$> check (bind cxt x s' q' a) s' t (b $$ VVar (lvl cxt) q')
-  (t, VPi x s' q Impl _ a b) -> do
-    Lam x s' q Impl <$> check (newBinder cxt x s' q a) s' t (b $$ VVar (lvl cxt) q)
+    mkLam x s' q' i' <$> check (bind cxt x s' q' a) s' t (b $$ vVar (lvl cxt) s' q')
+  (t, viewPi -> Just (x, s', q, Impl, a, b)) -> do
+    mkLam x s' q Impl <$> check (newBinder cxt x s' q a) s' t (b $$ vVar (lvl cxt) s' q)
   (P.Let x s' q a t u, a') -> do
     checkBinderMode cxt s' q
     u' <- freshUniverse (withMarker s' (stageMode s') cxt) s'
@@ -165,19 +179,19 @@ infer cxt s = \case
           | x == x' && origin == Source = do
               ensureStage cxt s s'
               ensureMode cxt q
-              pure (Var ix q, a)
+              pure (Var ix, a)
           | otherwise = go (ix + 1) types
         go ix [] =
           elabError cxt $ NameNotInScope x
     go 0 (types cxt)
+  P.Lam _ (Right _) _ | s == SObj -> elabError cxt InferObjLam
   P.Lam x (Right i) t -> do
     -- By default infer a runtime lambda
     let q = Omega
-    r <- freshRepVal cxt
     a <- freshMetaVal cxt s (stageMode s)
     let cxt' = bind cxt x s q a
     (t, b) <- insert cxt' $ infer cxt' s t
-    pure (Lam x s q i t, VPi x s q i r a $ closeVal cxt b)
+    pure (LamMeta x i t, VPiMeta x i a $ closeVal cxt b)
   P.Lam x Left {} t ->
     elabError cxt $ InferNamedLam
   P.App t u i -> do
@@ -194,19 +208,21 @@ infer cxt s = \case
         pure (Expl, t, tty)
 
     (s', q, a, b) <- case force tty of
-      VPi x s' q i' _ a b -> do
+      tty | Just (x, s', q, i', a, b) <- viewPi tty -> do
         unless (i == i') $ elabError cxt $ IcitMismatch i i'
         pure (s', q, a, b)
       tty -> do
         let q = Omega
-        r <- freshRepVal cxt
         a <- freshMetaVal cxt s (stageMode s)
         b <- Closure (env cxt) <$> freshMeta (bind cxt "x" s q a) s (stageMode s)
-        unifyCatch cxt (VPi "x" s q i r a b) tty
+        expected <- case s of
+          SMeta -> pure (VPiMeta "x" i a b)
+          SObj -> (\r -> VPiObj "x" q i r a b) <$> freshRepVal cxt
+        unifyCatch cxt expected tty
         pure (s, q, a, b)
 
     u <- checkIn cxt s' q u a
-    pure (App t u s' q i, b $$ eval (env cxt) u)
+    pure (mkApp t u s' q i, b $$ eval (env cxt) u)
   P.UMeta -> do
     ensureStage cxt s SMeta
     pure (UMeta, VUMeta)
@@ -275,7 +291,7 @@ infer cxt s = \case
     checkBinderMode cxt SMeta q
     a <- checkIn cxt SMeta Omega a VUMeta
     b <- checkIn (bind cxt x SMeta Omega (eval (env cxt) a)) SMeta Omega b VUMeta
-    pure (Pi x SMeta q i unitRep a b, VUMeta)
+    pure (PiMeta x i a b, VUMeta)
   P.Pi x q i SObj a b -> do
     ensureStage cxt s SObj
     ensureMode cxt Zero
@@ -297,12 +313,12 @@ infer cxt s = \case
             unifyCatch cxt (VPol Neg) (ev codTh)
             pure (b, codRep)
         let r = Rep (RArrow domRep codRep)
-        pure (Pi x SObj Omega i r a b, VUObj (VPol Neg) (ev r))
+        pure (PiObj x Omega i r a b, VUObj (VPol Neg) (ev r))
       Zero -> do
         domTh <- freshRep cxt
         a <- checkIn cxt SObj Zero a (VUObj (ev domTh) (ev domRep))
         b <- checkCod a
-        pure (Pi x SObj Zero i codRep a b, VUObj (ev codTh) (ev codRep))
+        pure (PiObj x Zero i codRep a b, VUObj (ev codTh) (ev codRep))
   P.Let x s' q a t u -> do
     checkBinderMode cxt s' q
     u' <- freshUniverse (withMarker s' (stageMode s') cxt) s'
