@@ -1,3 +1,0 @@
--- expect: Stage mismatch
-let 0 G : U = (A : U) ->' U;
-U

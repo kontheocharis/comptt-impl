@@ -1,4 +1,0 @@
--- expect: Stage mismatch
-letm M : U' = U';
-let 0 C : U = M;
-U

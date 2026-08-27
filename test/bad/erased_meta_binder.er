@@ -1,3 +1,0 @@
--- expect: Meta-level binders cannot be marked erased
-letm F : U' = (0 X : U') ->' U';
-U

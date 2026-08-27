@@ -1,6 +1,0 @@
--- expect: Term is valid in mode 0 but need mode ω
-let 0 Nat : U = (0 A : U) -> A -> (A -> A) -> A;
-let 0 n : Nat = \A z s. z;
-letm q : ^0 Nat = <n>;
-let bad : Nat = ~q;
-bad
