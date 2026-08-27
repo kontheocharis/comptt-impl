@@ -1,0 +1,15 @@
+-- flags: --meta
+
+letm id : {α : Rep +} ->' ^ (U α -> U α)
+  = <λ x . x>;
+  
+letm result :
+    (nat : Rep +) ->'
+    (Nat : ^0 U nat) ->'
+    (zero : ^~Nat) ->'
+    (succ : ^~Nat ->' ^~Nat) ->'
+    (elim : {α : Rep -} (P : ^~Nat ->' ^0 U α) (zeroM : ^~(P zero)) (succM : {k : ^~Nat} ->' ^~(P k) ->' ^~(P (succ k))) ->' (n : ^~Nat) ->' ^~(P n)) ->'
+    ^(▶ ~Nat)
+  = λ nat Nat zero succ elim . elim (λ n . <▶ ~Nat>) (<return ~zero>) (λ {k} pk . <return ~(succ k)>) (succ zero);
+
+result
