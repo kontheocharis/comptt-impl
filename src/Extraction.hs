@@ -23,8 +23,8 @@ extract = go (ExEnv 0 0 [])
       OVar x _ -> CVar (lvl2Ix (Lvl (nRuntime env)) (fromJust $ (runtime env) !! unIx (lvl2Ix (Lvl (nEnv env)) x)))
       OApp t u Omega i -> CApp (go env t) (go env u)
       OApp t u Zero i -> go env t
-      OLam x Omega i t -> CLam x (go (extend env Omega) t)
-      OLam x Zero i t -> go (extend env Zero) t
+      OLam x Omega i _ t -> CLam x (go (extend env Omega) t)
+      OLam x Zero i _ t -> go (extend env Zero) t
       OLet x Omega _ t u -> CLet x (go env t) (go (extend env Omega) u)
       OLet x Zero _ t u -> go (extend env Zero) u
       ORet t -> go env t

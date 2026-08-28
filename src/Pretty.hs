@@ -69,8 +69,8 @@ prettyTm prec = go prec
       _ -> error "impossible"
 
     goLam :: [Name] -> Tm -> ShowS
-    goLam ns (LamObj (fresh ns -> x) _ i t) = (' ' :) . lamBind x i . goLam (ns :> x) t
-    goLam ns (LamMeta (fresh ns -> x) i t) = (' ' :) . lamBind x i . goLam (ns :> x) t
+    goLam ns (LamObj (fresh ns -> x) _ i _ t) = (' ' :) . lamBind x i . goLam (ns :> x) t
+    goLam ns (LamMeta (fresh ns -> x) i _ t) = (' ' :) . lamBind x i . goLam (ns :> x) t
     goLam ns t = (". " ++) . go letp ns t
 
     goPi :: Stage -> [Name] -> Tm -> ShowS
@@ -89,8 +89,8 @@ prettyTm prec = go prec
       Var (Ix x) -> ((ns !! x) ++)
       AppObj t u _ i -> goApp p ns t u i
       AppMeta t u i -> goApp p ns t u i
-      LamObj (fresh ns -> x) _ i t -> par p letp $ ("λ " ++) . lamBind x i . goLam (ns :> x) t
-      LamMeta (fresh ns -> x) i t -> par p letp $ ("λ' " ++) . lamBind x i . goLam (ns :> x) t
+      LamObj (fresh ns -> x) _ i _ t -> par p letp $ ("λ " ++) . lamBind x i . goLam (ns :> x) t
+      LamMeta (fresh ns -> x) i _ t -> par p letp $ ("λ' " ++) . lamBind x i . goLam (ns :> x) t
       Producer a -> par p appp $ ("▶ " ++) . go atomp ns a
       Ret t -> par p appp $ ("return " ++) . go atomp ns t
       UObj _ a -> par p appp $ ("U " ++) . go atomp ns a
@@ -129,8 +129,8 @@ displayMetas :: IO ()
 displayMetas = do
   ms <- readIORef mcxt
   forM_ (IM.toList ms) $ \(m, e) -> case e of
-    Unsolved mrk -> printf "let ?%s = %s?;\n" (show m) (printMarker mrk)
-    Solved mrk v -> printf "let ?%s = %s%s;\n" (show m) (printMarker mrk) (showTm0 $ quote 0 v)
+    Unsolved mrk a -> printf "let ?%s : %s = %s?;\n" (show m) (showTm0 $ quote 0 a) (printMarker mrk)
+    Solved mrk v a -> printf "let ?%s : %s = %s%s;\n" (show m) (showTm0 $ quote 0 a) (printMarker mrk) (showTm0 $ quote 0 v)
   putStrLn ""
   where
     printMarker :: Marker -> String

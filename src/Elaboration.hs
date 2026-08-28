@@ -20,27 +20,42 @@ import Value
 
 -- @@Todo: TC postponing!
 
-freshMeta :: Cxt -> Stage -> Mode -> IO Tm
-freshMeta cxt s q = do
+freshMeta :: Cxt -> Stage -> Mode -> VTy -> IO Tm
+freshMeta cxt s q ~a = do
   m <- readIORef nextMeta
   writeIORef nextMeta (m + 1)
   let mrk = marker (withMarker s q cxt)
-  modifyIORef' mcxt $ IM.insert m (Unsolved mrk)
+  modifyIORef' mcxt $ IM.insert m (Unsolved mrk (eval [] (closeTy cxt a)))
   pure (InsertedMeta (MetaVar m) mrk (bds cxt))
 
-freshMetaVal :: Cxt -> Stage -> Mode -> IO Val
-freshMetaVal cxt s q = eval (env cxt) <$> freshMeta cxt s q
+freshMetaVal :: Cxt -> Stage -> Mode -> VTy -> IO Val
+freshMetaVal cxt s q ~a = eval (env cxt) <$> freshMeta cxt s q a
 
-freshRep :: Cxt -> IO Tm
-freshRep cxt = freshMeta cxt SMeta Omega
+freshPol :: Cxt -> IO Tm
+freshPol cxt = freshMeta cxt SMeta Omega VPolU
 
-freshRepVal :: Cxt -> IO Val
-freshRepVal cxt = freshMetaVal cxt SMeta Omega
+freshRep :: Cxt -> VPol -> IO Tm
+freshRep cxt th = freshMeta cxt SMeta Omega (VRepU th)
+
+freshRepVal :: Cxt -> VPol -> IO Val
+freshRepVal cxt th = freshMetaVal cxt SMeta Omega (VRepU th)
+
+freshPolVal :: Cxt -> IO Val
+freshPolVal cxt = freshMetaVal cxt SMeta Omega VPolU
 
 freshUniverse :: Cxt -> Stage -> IO VTy
 freshUniverse _ SMeta = pure VUMeta
-freshUniverse cxt SObj =
-  VUObj <$> freshRepVal cxt <*> freshRepVal cxt
+freshUniverse cxt SObj = do
+  th <- freshPolVal cxt
+  VUObj th <$> freshRepVal cxt th
+
+freshTypeVal :: Cxt -> Stage -> IO VTy
+freshTypeVal cxt s = eval (env cxt) <$> freshType cxt s
+
+freshType :: Cxt -> Stage -> IO Ty
+freshType cxt s = do
+  u <- freshUniverse (withMarker s (stageTypeMode s) cxt) s
+  freshMeta cxt s (stageTypeMode s) u
 
 elabError :: Cxt -> ElabError -> IO a
 elabError cxt e = throwIO $ Error (pos cxt) (ElabError cxt e)
@@ -55,14 +70,14 @@ insert' cxt act = go =<< act
   where
     go (t, va) = case force va of
       va | Just (x, s, q, Impl, a, b) <- viewPi va -> do
-        m <- freshMeta cxt s q
+        m <- freshMeta cxt s q a
         let mv = eval (env cxt) m
         go (mkApp t m s q Impl, b $$ mv)
       va -> pure (t, va)
 
-mkLam :: Name -> Stage -> Mode -> Icit -> Tm -> Tm
-mkLam x SObj q i = LamObj x q i
-mkLam x SMeta _ i = LamMeta x i
+mkLam :: Name -> Stage -> Mode -> Icit -> Ty -> Tm -> Tm
+mkLam x SObj q i a = LamObj x q i a
+mkLam x SMeta _ i a = LamMeta x i a
 
 mkApp :: Tm -> Tm -> Stage -> Mode -> Icit -> Tm
 mkApp t u SObj q i = AppObj t u q i
@@ -70,8 +85,8 @@ mkApp t u SMeta _ i = AppMeta t u i
 
 isImplLam :: Tm -> Bool
 isImplLam = \case
-  LamObj _ _ Impl _ -> True
-  LamMeta _ Impl _ -> True
+  LamObj _ _ Impl _ _ -> True
+  LamMeta _ Impl _ _ -> True
   _ -> False
 
 insert :: Cxt -> IO (Tm, VTy) -> IO (Tm, VTy)
@@ -89,7 +104,7 @@ insertUntilName cxt name act = go =<< act
           then
             pure (t, va)
           else do
-            m <- freshMeta cxt s q
+            m <- freshMeta cxt s q a
             let mv = eval (env cxt) m
             go (mkApp t m s q Impl, b $$ mv)
       _ -> elabError cxt $ NoNamedImplicitArg name
@@ -118,6 +133,11 @@ ensureMode :: Cxt -> Mode -> IO ()
 ensureMode cxt Zero = when (marker cxt /= Present) (elabError cxt InsufficientMode)
 ensureMode _ Omega = pure ()
 
+checkType :: Cxt -> Stage -> P.Tm -> IO Tm
+checkType cxt s a = do
+  u <- freshUniverse (withMarker s (stageTypeMode s) cxt) s
+  checkIn cxt s (stageTypeMode s) a u
+
 checkRep :: Cxt -> Polarity -> P.Tm -> IO Tm
 checkRep cxt th a = check cxt SMeta a (VRepU (VPol th))
 
@@ -143,13 +163,12 @@ check cxt s t a = case (t, force a) of
     check (cxt {pos = pos}) s t a
   (P.Lam x i t, viewPi -> Just (x', s', q', i', a, b)) | either (\x -> x == x' && i' == Impl) (== i') i -> do
     -- Here we must wrap the variable in ↓ if the q = ω, because of the lambda rule.
-    mkLam x s' q' i' <$> check (bind cxt x s' q' a) s' t (b $$ vVar (lvl cxt) s' q')
+    mkLam x s' q' i' (quote (lvl cxt) a) <$> check (bind cxt x s' q' a) s' t (b $$ vVar (lvl cxt) s' q' a)
   (t, viewPi -> Just (x, s', q, Impl, a, b)) -> do
-    mkLam x s' q Impl <$> check (newBinder cxt x s' q a) s' t (b $$ vVar (lvl cxt) s' q)
+    mkLam x s' q Impl (quote (lvl cxt) a) <$> check (newBinder cxt x s' q a) s' t (b $$ vVar (lvl cxt) s' q a)
   (P.Let x s' q a t u, a') -> do
     checkBinderMode cxt s' q
-    u' <- freshUniverse (withMarker s' (stageMode s') cxt) s'
-    a <- checkIn cxt s' (stageMode s') a u'
+    a <- checkType cxt s' a
     let ~va = eval (env cxt) a
     t <- checkIn cxt s' q t va
     let ~vt = eval (env cxt) t
@@ -161,7 +180,7 @@ check cxt s t a = case (t, force a) of
     ensureStage cxt s SMeta
     quoteS q <$> checkIn cxt SObj q t a
   (P.Hole, a) ->
-    freshMeta cxt s Omega
+    freshMeta cxt s Omega a
   (t, expected) -> do
     (t, inferred) <- insert cxt $ infer cxt s t
     coerce cxt t inferred expected
@@ -188,10 +207,11 @@ infer cxt s = \case
   P.Lam x (Right i) t -> do
     -- By default infer a runtime lambda
     let q = Omega
-    a <- freshMetaVal cxt s (stageMode s)
-    let cxt' = bind cxt x s q a
+    a <- freshType cxt s
+    let ~va = eval (env cxt) a
+    let cxt' = bind cxt x s q va
     (t, b) <- insert cxt' $ infer cxt' s t
-    pure (LamMeta x i t, VPiMeta x i a $ closeVal cxt b)
+    pure (LamMeta x i a t, VPiMeta x i va $ closeVal cxt b)
   P.Lam x Left {} t ->
     elabError cxt $ InferNamedLam
   P.App t u i -> do
@@ -213,11 +233,12 @@ infer cxt s = \case
         pure (s', q, a, b)
       tty -> do
         let q = Omega
-        a <- freshMetaVal cxt s (stageMode s)
-        b <- Closure (env cxt) <$> freshMeta (bind cxt "x" s q a) s (stageMode s)
+        a <- freshTypeVal cxt s
+        let cxt' = bind cxt "x" s q a
+        b <- Closure (env cxt) <$> freshType cxt' s
         expected <- case s of
           SMeta -> pure (VPiMeta "x" i a b)
-          SObj -> (\r -> VPiObj "x" q i r a b) <$> freshRepVal cxt
+          SObj -> (\r -> VPiObj "x" q i r a b) <$> freshRepVal cxt (VPol Neg)
         unifyCatch cxt expected tty
         pure (s, q, a, b)
 
@@ -230,13 +251,13 @@ infer cxt s = \case
     ensureStage cxt s SObj
     ensureMode cxt Zero
     -- We can deduce the polarity from r
-    th <- freshRep cxt
+    th <- freshPol cxt
     a <- check cxt SMeta r (VRepU (eval (env cxt) th))
     pure (UObj th a, VUObj (VPol Pos) vUnitRep)
   P.Producer a -> do
     ensureStage cxt s SObj
     ensureMode cxt Zero
-    rep <- freshRepVal cxt
+    rep <- freshRepVal cxt (VPol Pos)
     a <- checkIn cxt SObj Zero a (VUObj (VPol Pos) rep)
     pure (Producer a, VUObj (VPol Neg) (VRep (RProducer rep)))
   P.Ret t -> do
@@ -245,8 +266,7 @@ infer cxt s = \case
     pure (Ret t, VProducer a)
   P.Lift q a -> do
     ensureStage cxt s SMeta
-    u' <- freshUniverse (withMarker SObj Zero cxt) SObj
-    a <- checkIn cxt SObj Zero a u'
+    a <- checkType cxt SObj a
     pure (Lift q a, VUMeta)
   P.PolU -> do
     ensureStage cxt s SMeta
@@ -283,7 +303,7 @@ infer cxt s = \case
         ensureMode cxt q
         pure (spliceS q t, a)
       tty -> do
-        a <- eval (env cxt) <$> freshMeta cxt SObj Zero
+        a <- freshTypeVal cxt SObj
         unifyCatch cxt (VLift Omega a) tty
         pure (spliceS Omega t, a)
   P.Pi x q i SMeta a b -> do
@@ -296,14 +316,14 @@ infer cxt s = \case
     ensureStage cxt s SObj
     ensureMode cxt Zero
     let ev = eval (env cxt)
-    domRep <- freshRep cxt
-    codTh <- freshRep cxt
-    codRep <- freshRep cxt
+    codTh <- freshPol cxt
+    codRep <- freshRep cxt (ev codTh)
     let checkCod a = checkIn (bind cxt x SObj Zero (ev a)) SObj Zero b (VUObj (ev codTh) (ev codRep))
     case q of
       -- ω-domain pi has the arrow representation
       -- 0-domain pi has the representation of its codomain
       Omega -> do
+        domRep <- freshRep cxt (VPol Pos)
         a <- checkIn cxt SObj Zero a (VUObj (VPol Pos) (ev domRep))
         b <- checkCod a
         (b, codRep) <- case force (ev codTh) of
@@ -315,20 +335,20 @@ infer cxt s = \case
         let r = Rep (RArrow domRep codRep)
         pure (PiObj x Omega i r a b, VUObj (VPol Neg) (ev r))
       Zero -> do
-        domTh <- freshRep cxt
+        domTh <- freshPol cxt
+        domRep <- freshRep cxt (ev domTh)
         a <- checkIn cxt SObj Zero a (VUObj (ev domTh) (ev domRep))
         b <- checkCod a
         pure (PiObj x Zero i codRep a b, VUObj (ev codTh) (ev codRep))
   P.Let x s' q a t u -> do
     checkBinderMode cxt s' q
-    u' <- freshUniverse (withMarker s' (stageMode s') cxt) s'
-    a <- checkIn cxt s' (stageMode s') a u'
+    a <- checkType cxt s' a
     let ~va = eval (env cxt) a
     t <- checkIn cxt s' q t va
     let ~vt = eval (env cxt) t
     (u, b) <- infer (define cxt x s' q vt va) s u
     pure (Let x s' q a t u, b)
   P.Hole -> do
-    a <- eval (env cxt) <$> freshMeta cxt s (stageMode s)
-    t <- freshMeta cxt s Omega
+    a <- freshTypeVal cxt s
+    t <- freshMeta cxt s Omega a
     pure (t, a)

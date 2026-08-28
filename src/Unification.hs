@@ -47,39 +47,34 @@ liftMarker :: PartialRenaming -> PartialRenaming
 liftMarker (PRen dom cod domMd ren) =
   PRen dom cod Present ren
 
-data Binder
-  = BObj Mode Icit
-  | BMeta Icit
-
 -- | invert : (Γ : Cxt) → # ∈ Γ → Sub Γ Δ → PRen Δ Γ
---   Also returns the binders of the inverted spine, in spine order.
-invert :: Lvl -> Marker -> Spine -> IO (PartialRenaming, [Binder])
+invert :: Lvl -> Marker -> Spine -> IO PartialRenaming
 invert gamma mrk sp = do
-  let bind :: Lvl -> IM.IntMap Renamed -> [Binder] -> Binder -> Lvl -> Renamed -> IO (Lvl, IM.IntMap Renamed, [Binder])
-      bind dom ren bs b (Lvl x) r
-        | IM.notMember x ren = pure (dom + 1, IM.insert x r ren, bs :> b)
+  let bind :: Lvl -> IM.IntMap Renamed -> Lvl -> Renamed -> IO (Lvl, IM.IntMap Renamed)
+      bind dom ren (Lvl x) r
+        | IM.notMember x ren = pure (dom + 1, IM.insert x r ren)
         | otherwise = throwIO InversionNonLinear
 
-      go :: Spine -> IO (Lvl, IM.IntMap Renamed, [Binder])
-      go [] = pure (0, mempty, [])
+      go :: Spine -> IO (Lvl, IM.IntMap Renamed)
+      go [] = pure (0, mempty)
       go (_ :> ESplice _) = throwIO InversionNonVariables
       go (sp :> EAppObj t q i) = do
-        (dom, ren, bs) <- go sp
+        (dom, ren) <- go sp
         case force t of
-          VVarObj x _ -> bind dom ren bs (BObj q i) x (RenDirect dom)
-          VRigidMeta x [ESplice sq] -> bind dom ren bs (BObj q i) x (RenQuoted dom q sq)
+          VVarObj x _ _ -> bind dom ren x (RenDirect dom)
+          VRigidMeta x _ [ESplice sq] -> bind dom ren x (RenQuoted dom q sq)
           _ -> throwIO InversionNonVariables
       go (sp :> EAppMeta t i) = do
-        (dom, ren, bs) <- go sp
+        (dom, ren) <- go sp
         case force t of
           VQuote q t' -> case force t' of
-            VVarObj x _ -> bind dom ren bs (BMeta i) x (RenSpliced dom q)
+            VVarObj x _ _ -> bind dom ren x (RenSpliced dom q)
             _ -> throwIO InversionNonVariables
-          VVarMeta x -> bind dom ren bs (BMeta i) x (RenDirect dom)
+          VVarMeta x _ -> bind dom ren x (RenDirect dom)
           _ -> throwIO InversionNonVariables
 
-  (dom, ren, bs) <- go sp
-  pure (PRen dom gamma mrk ren, bs)
+  (dom, ren) <- go sp
+  pure (PRen dom gamma mrk ren)
 
 -- | rename : (m : Meta i Δ) → PRen Δ Γ → Val Γ → Tm Δ
 rename :: MetaVar -> PartialRenaming -> Val -> IO Tm
@@ -122,19 +117,19 @@ rename m pren v = go pren v
         | otherwise -> do
             when (mrk == Present) (encounterU pren)
             goSp pren (Meta m' mrk) sp
-      VRigidObj (Lvl x) md sp -> do
+      VRigidObj (Lvl x) md _ sp -> do
         when (md == Zero) (encounterU pren)
         goVar pren x sp
-      VRigidMeta (Lvl x) sp -> goVar pren x sp
-      VLamObj x q i t ->
-        LamObj x q i <$> go (lift pren) (t $$ VVarObj (cod pren) q)
-      VLamMeta x i t ->
-        LamMeta x i <$> go (lift pren) (t $$ VVarMeta (cod pren))
+      VRigidMeta (Lvl x) _ sp -> goVar pren x sp
+      VLamObj x q i a t ->
+        LamObj x q i <$> go pren a <*> go (lift pren) (t $$ VVarObj (cod pren) q a)
+      VLamMeta x i a t ->
+        LamMeta x i <$> go pren a <*> go (lift pren) (t $$ VVarMeta (cod pren) a)
       VPiObj x q i r a b -> do
         encounterU pren
-        PiObj x q i <$> go pren r <*> go pren a <*> go (lift pren) (b $$ VVarObj (cod pren) Zero)
+        PiObj x q i <$> go pren r <*> go pren a <*> go (lift pren) (b $$ VVarObj (cod pren) Zero a)
       VPiMeta x i a b ->
-        PiMeta x i <$> go pren a <*> go (lift pren) (b $$ VVarMeta (cod pren))
+        PiMeta x i <$> go pren a <*> go (lift pren) (b $$ VVarMeta (cod pren) a)
       VProducer a -> do
         encounterU pren
         Producer <$> go pren a
@@ -152,22 +147,40 @@ rename m pren v = go pren v
       VRepU th -> RepU <$> go pren th
       VRep r -> Rep <$> bitraverseRepF (go pren) (go pren) r
 
-lams :: [Binder] -> Tm -> Tm
-lams = go (0 :: Int)
+lams :: VTy -> Lvl -> Tm -> Tm
+lams a n t = go 0 a
   where
-    go _ [] t = t
-    go x (BObj q i : bs) t = LamObj (name x) q i (go (x + 1) bs t)
-    go x (BMeta i : bs) t = LamMeta (name x) i (go (x + 1) bs t)
-    name x = "x" ++ show (x + 1)
+    go l a
+      | l == n = t
+      | otherwise = case force a of
+          VPiMeta x i dom b -> LamMeta x i (quote l dom) (go (l + 1) (b $$ VVarMeta l dom))
+          VPiObj x q i _ dom b -> LamObj x q i (quote l dom) (go (l + 1) (b $$ VVarObj l q dom))
+          _ -> error "impossible"
 
 -- (For the 'NotDowned' case:)
 -- solve : (Γ : Con) → (m : Meta i Δ) -> # ∈ Δ → Sub Γ Δ → Tm Γ → TC ()
 solve :: Lvl -> MetaVar -> Marker -> Spine -> Val -> IO ()
 solve gamma m mrk sp rhs = do
-  (pren, binders) <- invert gamma mrk sp
-  rhs <- rename m pren rhs
-  let solution = eval [] $ lams (reverse binders) rhs
-  modifyIORef' mcxt $ IM.insert (unMetaVar m) (Solved mrk solution)
+  a <- evaluate $ metaType (lookupMeta m)
+  pren <- invert gamma mrk sp
+  renamed <- rename m pren rhs
+  solveUniverse gamma (spineTy a sp) rhs
+  let solution = eval [] $ lams a (dom pren) renamed
+  modifyIORef' mcxt $ IM.insert (unMetaVar m) (Solved mrk solution a)
+
+-- When we solve a metavariable whose applied type is an object universe, we are
+-- able to compute the representation and polarity of the solution, so that we
+-- can update the universe's indices. If we don't do this, we will end up with
+-- dangling representation/polarity metas created during elaboration.
+--
+-- @@Design: is there a better way to do this?
+solveUniverse :: Lvl -> VTy -> Val -> IO ()
+solveUniverse gamma ty rhs = case force ty of
+  VUObj th r -> do
+    let r' = vRepOf rhs
+    unify gamma r r'
+    unify gamma th (vPolOf r')
+  _ -> pure ()
 
 unifyRepF :: Lvl -> RepF Val Val -> RepF Val Val -> IO ()
 unifyRepF l r r' = case (r, r') of
@@ -186,19 +199,19 @@ unifySp l sp sp' = case (sp, sp') of
 
 unify :: Lvl -> Val -> Val -> IO ()
 unify l t u = case (force t, force u) of
-  (VLamObj _ q _ t, VLamObj _ q' _ t')
-    | q == q' -> unify (l + 1) (t $$ VVarObj l q) (t' $$ VVarObj l q)
+  (VLamObj _ q _ a t, VLamObj _ q' _ _ t')
+    | q == q' -> unify (l + 1) (t $$ VVarObj l q a) (t' $$ VVarObj l q a)
     | otherwise -> throwIO UnifyError
-  (VLamMeta _ _ t, VLamMeta _ _ t') -> unify (l + 1) (t $$ VVarMeta l) (t' $$ VVarMeta l)
+  (VLamMeta _ _ a t, VLamMeta _ _ _ t') -> unify (l + 1) (t $$ VVarMeta l a) (t' $$ VVarMeta l a)
   (VFlex m _ sp, VFlex m' _ sp')
     | m == m' -> unifySp l sp sp'
   -- @@Todo: apply full η expansion
   (VFlex m mrk (sp :> ESplice q), t') -> solve l m mrk sp (vQuote q t')
   (t, VFlex m' mrk (sp' :> ESplice q)) -> solve l m' mrk sp' (vQuote q t)
-  (t, VLamObj _ q i b) -> unify (l + 1) (vAppObj t (VVarObj l q) q i) (b $$ VVarObj l q)
-  (t, VLamMeta _ i b) -> unify (l + 1) (vAppMeta t (VVarMeta l) i) (b $$ VVarMeta l)
-  (VLamObj _ q i b, u) -> unify (l + 1) (b $$ VVarObj l q) (vAppObj u (VVarObj l q) q i)
-  (VLamMeta _ i b, u) -> unify (l + 1) (b $$ VVarMeta l) (vAppMeta u (VVarMeta l) i)
+  (t, VLamObj _ q i a b) -> unify (l + 1) (vAppObj t (VVarObj l q a) q i) (b $$ VVarObj l q a)
+  (t, VLamMeta _ i a b) -> unify (l + 1) (vAppMeta t (VVarMeta l a) i) (b $$ VVarMeta l a)
+  (VLamObj _ q i a b, u) -> unify (l + 1) (b $$ VVarObj l q a) (vAppObj u (VVarObj l q a) q i)
+  (VLamMeta _ i a b, u) -> unify (l + 1) (b $$ VVarMeta l a) (vAppMeta u (VVarMeta l a) i)
   (VProducer a, VProducer a') -> unify l a a'
   (VRet t, VRet t') -> unify l t t'
   (VUMeta, VUMeta) -> pure ()
@@ -209,16 +222,16 @@ unify l t u = case (force t, force u) of
   (VRep r, VRep r') -> unifyRepF l r r'
   (VPiObj x q i r a b, VPiObj x' q' i' r' a' b')
     | q == q' && i == i' ->
-        unify l r r' >> unify l a a' >> unify (l + 1) (b $$ VVarObj l Zero) (b' $$ VVarObj l Zero)
+        unify l r r' >> unify l a a' >> unify (l + 1) (b $$ VVarObj l Zero a) (b' $$ VVarObj l Zero a)
   (VPiMeta x i a b, VPiMeta x' i' a' b')
-    | i == i' -> unify l a a' >> unify (l + 1) (b $$ VVarMeta l) (b' $$ VVarMeta l)
+    | i == i' -> unify l a a' >> unify (l + 1) (b $$ VVarMeta l a) (b' $$ VVarMeta l a)
   (VLift q a, VLift q' a') | q == q' -> unify l a a'
   (VQuote q t, VQuote q' t') | q == q' -> unify l t t'
   (VQuote q t, t') -> unify l t (vSplice q t')
   (t, VQuote q t') -> unify l (vSplice q t) t'
-  (VRigidObj x _ sp, VRigidObj x' _ sp')
+  (VRigidObj x _ _ sp, VRigidObj x' _ _ sp')
     | x == x' -> unifySp l sp sp'
-  (VRigidMeta x sp, VRigidMeta x' sp')
+  (VRigidMeta x _ sp, VRigidMeta x' _ sp')
     | x == x' -> unifySp l sp sp'
   (VFlex m mrk sp, t') -> solve l m mrk sp t'
   (t, VFlex m' mrk sp') -> solve l m' mrk sp' t

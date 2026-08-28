@@ -42,9 +42,9 @@ bitraverseRepF f g = \case
 
 -- The erasure mode for types in a given stage.
 -- Here `Omega` really means "erasure marker not necessary".
-stageMode :: Stage -> Mode
-stageMode SObj = Zero
-stageMode SMeta = Omega
+stageTypeMode :: Stage -> Mode
+stageTypeMode SObj = Zero
+stageTypeMode SMeta = Omega
 
 -- Erasure marker (#), appears in contexts:
 -- Tm ω (Γ, #) ≃ Tm 0 Γ

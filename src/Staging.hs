@@ -13,7 +13,7 @@ newtype ORep = ORep (RepF Polarity ORep)
 -- Object code, with de Bruijn levels for variables
 data OTm
   = OVar Lvl Mode
-  | OLam Name Mode Icit OTm
+  | OLam Name Mode Icit OTm OTm
   | OApp OTm OTm Mode Icit
   | OPi Name Mode Icit ORep OTm OTm
   | OProducer OTm
@@ -59,15 +59,16 @@ appBDs l env ~v bds = case (env, bds) of
 
 metaSVal :: Lvl -> MetaVar -> SVal
 metaSVal l m = case lookupMeta m of
-  Solved _ v -> go l [] (quote 0 v)
-  Unsolved _ -> error "impossible"
+  Solved _ v _ -> go l [] (quote 0 v)
+  Unsolved _ _ -> error "impossible"
 
 go :: Lvl -> SEnv -> Tm -> SVal
 go l env = \case
   Var x -> env !! unIx x
-  LamMeta _ _ t -> SClos env t
-  LamObj x q i t ->
-    SCode (OLam x q i (stageObj (go (l + 1) (env :> SCode (OVar l q)) t)))
+  LamMeta _ _ _ t -> SClos env t
+  LamObj x q i a t ->
+    SCode . OLam x q i (stageObj (go l env a)) $
+      stageObj (go (l + 1) (env :> SCode (OVar l q)) t)
   AppObj t u q i -> sAppObj (go l env t) (go l env u) q i
   AppMeta t u _ -> sAppMeta l (go l env t) (go l env u)
   Let _ SMeta _ _ t u -> go l (env :> go l env t) u
@@ -98,7 +99,7 @@ quoteORep (ORep r) = Rep (bimapRepF Pol quoteORep r)
 quoteO :: Lvl -> OTm -> Tm
 quoteO l = \case
   OVar x _ -> Var (lvl2Ix l x)
-  OLam x q i t -> LamObj x q i (quoteO (l + 1) t)
+  OLam x q i a t -> LamObj x q i (quoteO l a) (quoteO (l + 1) t)
   OApp t u q i -> AppObj (quoteO l t) (quoteO l u) q i
   OPi x q i r a b -> PiObj x q i (quoteORep r) (quoteO l a) (quoteO (l + 1) b)
   OProducer a -> Producer (quoteO l a)

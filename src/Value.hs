@@ -23,10 +23,10 @@ type VPol = Val
 
 data Val
   = VFlex MetaVar Marker Spine
-  | VRigidObj Lvl Mode Spine -- records the original mode the variable was bound in
-  | VRigidMeta Lvl Spine
-  | VLamObj Name Mode Icit {-# UNPACK #-} Closure
-  | VLamMeta Name Icit {-# UNPACK #-} Closure
+  | VRigidObj Lvl Mode ~VTy Spine -- records the original mode the variable was bound in
+  | VRigidMeta Lvl ~VTy Spine
+  | VLamObj Name Mode Icit ~VTy {-# UNPACK #-} Closure
+  | VLamMeta Name Icit ~VTy {-# UNPACK #-} Closure
   | VPiObj Name Mode Icit ~VRep ~VTy {-# UNPACK #-} Closure
   | VPiMeta Name Icit ~VTy {-# UNPACK #-} Closure
   | VProducer VTy
@@ -41,15 +41,15 @@ data Val
   | VRep (RepF VPol VRep)
   deriving (Show)
 
-pattern VVarObj :: Lvl -> Mode -> Val
-pattern VVarObj x m = VRigidObj x m []
+pattern VVarObj :: Lvl -> Mode -> VTy -> Val
+pattern VVarObj x m a = VRigidObj x m a []
 
-pattern VVarMeta :: Lvl -> Val
-pattern VVarMeta x = VRigidMeta x []
+pattern VVarMeta :: Lvl -> VTy -> Val
+pattern VVarMeta x a = VRigidMeta x a []
 
-vVar :: Lvl -> Stage -> Mode -> Val
-vVar x SObj q = VVarObj x q
-vVar x SMeta _ = VVarMeta x
+vVar :: Lvl -> Stage -> Mode -> VTy -> Val
+vVar x SObj q a = VVarObj x q a
+vVar x SMeta _ a = VVarMeta x a
 
 pattern VMeta :: MetaVar -> Marker -> Val
 pattern VMeta m mrk = VFlex m mrk []

@@ -8,7 +8,12 @@ import Value
 
 --------------------------------------------------------------------------------
 
-data MetaEntry = Solved Marker Val | Unsolved Marker
+data MetaEntry = Solved Marker Val ~VTy | Unsolved Marker ~VTy
+
+metaType :: MetaEntry -> VTy
+metaType = \case
+  Solved _ _ a -> a
+  Unsolved _ a -> a
 
 nextMeta :: IORef Int
 nextMeta = unsafeDupablePerformIO $ newIORef 0
@@ -35,5 +40,5 @@ anyUnsolved = do
   ms <- readIORef mcxt
   pure $ any isUnsolved (IM.elems ms)
   where
-    isUnsolved (Unsolved _) = True
+    isUnsolved (Unsolved _ _) = True
     isUnsolved _ = False

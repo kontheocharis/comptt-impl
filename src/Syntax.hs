@@ -12,8 +12,8 @@ type Pol = Tm
 
 data Tm
   = Var Ix
-  | LamObj Name Mode Icit Tm
-  | LamMeta Name Icit Tm
+  | LamObj Name Mode Icit Ty Tm
+  | LamMeta Name Icit Ty Tm
   | AppObj Tm Tm Mode Icit
   | AppMeta Tm Tm Icit
   | UMeta
