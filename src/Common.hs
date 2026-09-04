@@ -41,19 +41,43 @@ bitraverseRepF f g = \case
   RArrow a b -> RArrow <$> g a <*> g b
 
 -- The erasure mode for types in a given stage.
--- Here `Omega` really means "erasure marker not necessary".
+-- Here `Omega` really means "erasure phase not necessary".
 stageTypeMode :: Stage -> Mode
 stageTypeMode SObj = Zero
 stageTypeMode SMeta = Omega
 
--- Erasure marker (#), appears in contexts:
--- Tm ω (Γ, #) ≃ Tm 0 Γ
-data Marker = Present | Absent deriving (Eq, Show)
+-- The free meet-semilattice on {#, $} which appear in contexts. Phase itself is
+-- representable because representable types are closed under products and unit.
+--
+--   Tm ω (Γ, #) ≅ Tm 0 Γ
+--   Tm ω (Γ, $) ≅ Ex Γ
+data Phase = Phase {erasure :: Bool, compilation :: Bool} deriving (Eq, Show)
 
-ext :: Marker -> Marker -> Marker
-ext Present _ = Present
-ext _ Present = Present
-ext Absent Absent = Absent
+topPhase :: Phase
+topPhase = Phase False False
+
+erasurePhase :: Phase
+erasurePhase = Phase True False
+
+modePhase :: Mode -> Phase
+modePhase Zero = erasurePhase
+modePhase Omega = topPhase
+
+compilationPhase :: Phase
+compilationPhase = Phase False True
+
+botPhase :: Phase
+botPhase = Phase True True
+
+meetPhase :: Phase -> Phase -> Phase
+meetPhase (Phase e c) (Phase e' c') = Phase (e || e') (c || c')
+
+-- assuming ph is at least as strong as assuming ph'
+entails :: Phase -> Phase -> Bool
+entails ph ph' = meetPhase ph ph' == ph
+
+phaseMarkerNames :: Phase -> [String]
+phaseMarkerNames (Phase e c) = ["erasure marker" | e] ++ ["compilation marker" | c]
 
 ----
 

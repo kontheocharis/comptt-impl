@@ -22,7 +22,7 @@ type VRep = Val
 type VPol = Val
 
 data Val
-  = VFlex MetaVar Marker Spine
+  = VFlex MetaVar Phase Spine
   | VRigidObj Lvl Mode ~VTy Spine -- records the original mode the variable was bound in
   | VRigidMeta Lvl ~VTy Spine
   | VLamObj Name Mode Icit ~VTy {-# UNPACK #-} Closure
@@ -51,8 +51,8 @@ vVar :: Lvl -> Stage -> Mode -> VTy -> Val
 vVar x SObj q a = VVarObj x q a
 vVar x SMeta _ a = VVarMeta x a
 
-pattern VMeta :: MetaVar -> Marker -> Val
-pattern VMeta m mrk = VFlex m mrk []
+pattern VMeta :: MetaVar -> Phase -> Val
+pattern VMeta m ph = VFlex m ph []
 
 vUnitRep :: VRep
 vUnitRep = VRep (RUnit (VPol Pos))

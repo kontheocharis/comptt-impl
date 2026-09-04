@@ -3,6 +3,7 @@ module Errors where
 import Common
 import Control.Exception
 import Cxt
+import Data.List (intercalate)
 import Syntax
 import Text.Printf
 
@@ -12,7 +13,7 @@ data UnifyError
   = Escaping
   | Occurs
   | UnifyError
-  | EscapingMarker
+  | EscapingPhase Phase
   | InversionNonVariables
   | InversionNonLinear
   deriving (Show, Exception)
@@ -63,7 +64,7 @@ displayError file (Error ps e) = do
                   UnifyError -> ""
                   Escaping -> "\n\n(escaping variable)"
                   Occurs -> "\n\n(occurs check failed)"
-                  EscapingMarker -> "\n\n(escaping erasure marker)"
+                  EscapingPhase ph -> "\n\n(escaping " ++ intercalate " and " (phaseMarkerNames ph) ++ ")"
                   InversionNonVariables -> "\n\n(spine inversion failed due to non-variable)"
                   InversionNonLinear -> "\n\n(spine inversion failed due to non-linear use of variables)"
             )

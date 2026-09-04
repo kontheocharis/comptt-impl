@@ -74,7 +74,7 @@ run opts (t, file) = do
   reset
   let die :: Error -> IO a
       die e = displayError file e >> exitFailure
-      elab = inferIn (emptyCxt (initialPos file)) (optStage opts) (optMode opts) t `catch` die
+      elab = inferIn (emptyCxt (initialPos file)) (optStage opts) (modePhase (optMode opts)) t `catch` die
       staged = do
         (t, _) <- elab
         stage (initialPos file) t `catch` die

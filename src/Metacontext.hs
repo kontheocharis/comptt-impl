@@ -8,7 +8,7 @@ import Value
 
 --------------------------------------------------------------------------------
 
-data MetaEntry = Solved Marker Val ~VTy | Unsolved Marker ~VTy
+data MetaEntry = Solved Phase Val ~VTy | Unsolved Phase ~VTy
 
 metaType :: MetaEntry -> VTy
 metaType = \case

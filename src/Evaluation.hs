@@ -17,7 +17,6 @@ module Evaluation
 where
 
 import Common
-import Data.Maybe (fromMaybe)
 import Metacontext
 import Syntax
 import Value
@@ -30,7 +29,7 @@ infixl 8 $$
 vAppObj :: Val -> Val -> Mode -> Icit -> Val
 vAppObj t ~u q i = case t of
   VLamObj _ _ _ _ b -> b $$ u
-  VFlex m mrk sp -> VFlex m mrk (sp :> EAppObj u q i)
+  VFlex m ph sp -> VFlex m ph (sp :> EAppObj u q i)
   VRigidObj x md a sp -> VRigidObj x md a (sp :> EAppObj u q i)
   VRigidMeta x a sp -> VRigidMeta x a (sp :> EAppObj u q i)
   _ -> error "impossible"
@@ -38,20 +37,20 @@ vAppObj t ~u q i = case t of
 vAppMeta :: Val -> Val -> Icit -> Val
 vAppMeta t ~u i = case t of
   VLamMeta _ _ _ b -> b $$ u
-  VFlex m mrk sp -> VFlex m mrk (sp :> EAppMeta u i)
+  VFlex m ph sp -> VFlex m ph (sp :> EAppMeta u i)
   VRigidMeta x a sp -> VRigidMeta x a (sp :> EAppMeta u i)
   _ -> error "impossible"
 
 vSplice :: Mode -> Val -> Val
 vSplice q t = case t of
   VQuote _ t -> t
-  VFlex m mrk sp -> VFlex m mrk (sp :> ESplice q)
+  VFlex m ph sp -> VFlex m ph (sp :> ESplice q)
   VRigidMeta x a sp -> VRigidMeta x a (sp :> ESplice q)
   _ -> error "impossible"
 
 vQuote :: Mode -> Val -> Val
 vQuote q t = case t of
-  VFlex m mrk (sp :> ESplice _) -> VFlex m mrk sp
+  VFlex m ph (sp :> ESplice _) -> VFlex m ph sp
   VRigidMeta x a (sp :> ESplice _) -> VRigidMeta x a sp
   t -> VQuote q t
 
@@ -66,10 +65,10 @@ vAppSp t = \case
   [] -> t
   sp :> e -> vElim (vAppSp t sp) e
 
-vMeta :: MetaVar -> Marker -> Val
-vMeta m mrk = case lookupMeta m of
+vMeta :: MetaVar -> Phase -> Val
+vMeta m ph = case lookupMeta m of
   Solved _ v _ -> v
-  Unsolved _ _ -> VMeta m mrk
+  Unsolved _ _ -> VMeta m ph
 
 vAppBDs :: Env -> Val -> [BD] -> Val
 vAppBDs env ~v bds = case (env, bds) of
@@ -93,8 +92,8 @@ eval env t = case t of
   Let _ _ _ _ t u -> eval (env :> eval env t) u
   UMeta -> VUMeta
   UObj th a -> VUObj (eval env th) (eval env a)
-  Meta m mrk -> vMeta m mrk
-  InsertedMeta m mrk bds -> vAppBDs env (vMeta m mrk) bds
+  Meta m ph -> vMeta m ph
+  InsertedMeta m ph bds -> vAppBDs env (vMeta m ph) bds
   Lift q a -> VLift q (eval env a)
   Quote q t -> vQuote q (eval env t)
   Splice q t -> vSplice q (eval env t)
@@ -159,7 +158,7 @@ quoteSp l t = \case
 
 quote :: Lvl -> Val -> Tm
 quote l t = case force t of
-  VFlex m mrk sp -> quoteSp l (Meta m mrk) sp
+  VFlex m ph sp -> quoteSp l (Meta m ph) sp
   VRigidObj x _ _ sp -> quoteSp l (Var (lvl2Ix l x)) sp
   VRigidMeta x _ sp -> quoteSp l (Var (lvl2Ix l x)) sp
   VLamObj x q i a t -> LamObj x q i (quote l a) (quote (l + 1) (t $$ VVarObj l q a))

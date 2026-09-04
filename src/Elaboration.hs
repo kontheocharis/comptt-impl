@@ -20,28 +20,28 @@ import Value
 
 -- @@Todo: TC postponing!
 
-freshMeta :: Cxt -> Stage -> Mode -> VTy -> IO Tm
-freshMeta cxt s q ~a = do
+freshMeta :: Cxt -> Phase -> VTy -> IO Tm
+freshMeta cxt p ~a = do
   m <- readIORef nextMeta
   writeIORef nextMeta (m + 1)
-  let mrk = marker (withMarker s q cxt)
-  modifyIORef' mcxt $ IM.insert m (Unsolved mrk (eval [] (closeTy cxt a)))
-  pure (InsertedMeta (MetaVar m) mrk (bds cxt))
+  let ph = meetPhase (phase cxt) p
+  modifyIORef' mcxt $ IM.insert m (Unsolved ph (eval [] (closeTy cxt a)))
+  pure (InsertedMeta (MetaVar m) ph (bds cxt))
 
-freshMetaVal :: Cxt -> Stage -> Mode -> VTy -> IO Val
-freshMetaVal cxt s q ~a = eval (env cxt) <$> freshMeta cxt s q a
+freshMetaVal :: Cxt -> Phase -> VTy -> IO Val
+freshMetaVal cxt p ~a = eval (env cxt) <$> freshMeta cxt p a
 
 freshPol :: Cxt -> IO Tm
-freshPol cxt = freshMeta cxt SMeta Omega VPolU
+freshPol cxt = freshMeta cxt topPhase VPolU
 
 freshRep :: Cxt -> VPol -> IO Tm
-freshRep cxt th = freshMeta cxt SMeta Omega (VRepU th)
+freshRep cxt th = freshMeta cxt topPhase (VRepU th)
 
 freshRepVal :: Cxt -> VPol -> IO Val
-freshRepVal cxt th = freshMetaVal cxt SMeta Omega (VRepU th)
+freshRepVal cxt th = freshMetaVal cxt topPhase (VRepU th)
 
 freshPolVal :: Cxt -> IO Val
-freshPolVal cxt = freshMetaVal cxt SMeta Omega VPolU
+freshPolVal cxt = freshMetaVal cxt topPhase VPolU
 
 freshUniverse :: Cxt -> Stage -> IO VTy
 freshUniverse _ SMeta = pure VUMeta
@@ -54,8 +54,9 @@ freshTypeVal cxt s = eval (env cxt) <$> freshType cxt s
 
 freshType :: Cxt -> Stage -> IO Ty
 freshType cxt s = do
-  u <- freshUniverse (withMarker s (stageTypeMode s) cxt) s
-  freshMeta cxt s (stageTypeMode s) u
+  let p = modePhase (stageTypeMode s)
+  u <- freshUniverse (enterPhase p cxt) s
+  freshMeta cxt p u
 
 elabError :: Cxt -> ElabError -> IO a
 elabError cxt e = throwIO $ Error (pos cxt) (ElabError cxt e)
@@ -70,7 +71,7 @@ insert' cxt act = go =<< act
   where
     go (t, va) = case force va of
       va | Just (x, s, q, Impl, a, b) <- viewPi va -> do
-        m <- freshMeta cxt s q a
+        m <- freshMeta cxt (modePhase q) a
         let mv = eval (env cxt) m
         go (mkApp t m s q Impl, b $$ mv)
       va -> pure (t, va)
@@ -104,20 +105,16 @@ insertUntilName cxt name act = go =<< act
           then
             pure (t, va)
           else do
-            m <- freshMeta cxt s q a
+            m <- freshMeta cxt (modePhase q) a
             let mv = eval (env cxt) m
             go (mkApp t m s q Impl, b $$ mv)
       _ -> elabError cxt $ NoNamedImplicitArg name
 
-withMarker :: Stage -> Mode -> Cxt -> Cxt
-withMarker SObj Zero = enterMarker
-withMarker _ _ = id
-
--- Check in a given mode and stage
+-- Check at a given stage, under an assumed phase
 --
--- check : (Γ : Ctx) -> (s : {meta, obj}) -> (i : {0, ω}) -> PTm -> Tyₛ Γ -> TC (Tmₛ {i} A)
-checkIn :: Cxt -> Stage -> Mode -> P.Tm -> VTy -> IO Tm
-checkIn cxt s q t a = check (withMarker s q cxt) s t a
+-- check : (Γ : Ctx) -> (s : {meta, obj}) -> (P : Phase) -> PTm -> Tyₛ (Γ, P) -> TC (Tmₛ (Γ, P) A)
+checkIn :: Cxt -> Stage -> Phase -> P.Tm -> VTy -> IO Tm
+checkIn cxt s p t a = check (enterPhase p cxt) s t a
 
 -- Check whether the given mode on a binder is valid in the given stage. We
 -- default to `runtime` mode for meta-binders, which is easier than some kind of
@@ -130,13 +127,14 @@ ensureStage :: Cxt -> Stage -> Stage -> IO ()
 ensureStage cxt s s' = when (s /= s') (elabError cxt $ StageMismatch s s')
 
 ensureMode :: Cxt -> Mode -> IO ()
-ensureMode cxt Zero = when (marker cxt /= Present) (elabError cxt InsufficientMode)
+ensureMode cxt Zero = unless (phase cxt `entails` erasurePhase) (elabError cxt InsufficientMode)
 ensureMode _ Omega = pure ()
 
 checkType :: Cxt -> Stage -> P.Tm -> IO Tm
 checkType cxt s a = do
-  u <- freshUniverse (withMarker s (stageTypeMode s) cxt) s
-  checkIn cxt s (stageTypeMode s) a u
+  let p = modePhase (stageTypeMode s)
+  u <- freshUniverse (enterPhase p cxt) s
+  checkIn cxt s p a u
 
 checkRep :: Cxt -> Polarity -> P.Tm -> IO Tm
 checkRep cxt th a = check cxt SMeta a (VRepU (VPol th))
@@ -170,7 +168,7 @@ check cxt s t a = case (t, force a) of
     checkBinderMode cxt s' q
     a <- checkType cxt s' a
     let ~va = eval (env cxt) a
-    t <- checkIn cxt s' q t va
+    t <- checkIn cxt s' (modePhase q) t va
     let ~vt = eval (env cxt) t
     u <- check (define cxt x s' q vt va) s u a'
     pure (Let x s' q a t u)
@@ -178,15 +176,15 @@ check cxt s t a = case (t, force a) of
     Ret <$> check cxt s t a
   (P.Quote t, VLift q a) -> do
     ensureStage cxt s SMeta
-    quoteS q <$> checkIn cxt SObj q t a
+    quoteS q <$> checkIn cxt SObj (modePhase q) t a
   (P.Hole, a) ->
-    freshMeta cxt s Omega a
+    freshMeta cxt topPhase a
   (t, expected) -> do
     (t, inferred) <- insert cxt $ infer cxt s t
     coerce cxt t inferred expected
 
-inferIn :: Cxt -> Stage -> Mode -> P.Tm -> IO (Tm, VTy)
-inferIn cxt s q t = infer (withMarker s q cxt) s t
+inferIn :: Cxt -> Stage -> Phase -> P.Tm -> IO (Tm, VTy)
+inferIn cxt s p t = infer (enterPhase p cxt) s t
 
 -- Mode ω
 infer :: Cxt -> Stage -> P.Tm -> IO (Tm, VTy)
@@ -242,7 +240,7 @@ infer cxt s = \case
         unifyCatch cxt expected tty
         pure (s, q, a, b)
 
-    u <- checkIn cxt s' q u a
+    u <- checkIn cxt s' (modePhase q) u a
     pure (mkApp t u s' q i, b $$ eval (env cxt) u)
   P.UMeta -> do
     ensureStage cxt s SMeta
@@ -258,7 +256,7 @@ infer cxt s = \case
     ensureStage cxt s SObj
     ensureMode cxt Zero
     rep <- freshRepVal cxt (VPol Pos)
-    a <- checkIn cxt SObj Zero a (VUObj (VPol Pos) rep)
+    a <- checkIn cxt SObj erasurePhase a (VUObj (VPol Pos) rep)
     pure (Producer a, VUObj (VPol Neg) (VRep (RProducer rep)))
   P.Ret t -> do
     ensureStage cxt s SObj
@@ -293,7 +291,7 @@ infer cxt s = \case
     pure (Rep (RArrow a b), VRepU (VPol Neg))
   P.Quote t -> do
     ensureStage cxt s SMeta
-    (t, a) <- inferIn cxt SObj Omega t
+    (t, a) <- inferIn cxt SObj topPhase t
     pure (quoteS Omega t, VLift Omega a)
   P.Splice t -> do
     ensureStage cxt s SObj
@@ -309,8 +307,8 @@ infer cxt s = \case
   P.Pi x q i SMeta a b -> do
     ensureStage cxt s SMeta
     checkBinderMode cxt SMeta q
-    a <- checkIn cxt SMeta Omega a VUMeta
-    b <- checkIn (bind cxt x SMeta Omega (eval (env cxt) a)) SMeta Omega b VUMeta
+    a <- checkIn cxt SMeta topPhase a VUMeta
+    b <- checkIn (bind cxt x SMeta Omega (eval (env cxt) a)) SMeta topPhase b VUMeta
     pure (PiMeta x i a b, VUMeta)
   P.Pi x q i SObj a b -> do
     ensureStage cxt s SObj
@@ -318,13 +316,13 @@ infer cxt s = \case
     let ev = eval (env cxt)
     codTh <- freshPol cxt
     codRep <- freshRep cxt (ev codTh)
-    let checkCod a = checkIn (bind cxt x SObj Zero (ev a)) SObj Zero b (VUObj (ev codTh) (ev codRep))
+    let checkCod a = checkIn (bind cxt x SObj Zero (ev a)) SObj erasurePhase b (VUObj (ev codTh) (ev codRep))
     case q of
       -- ω-domain pi has the arrow representation
       -- 0-domain pi has the representation of its codomain
       Omega -> do
         domRep <- freshRep cxt (VPol Pos)
-        a <- checkIn cxt SObj Zero a (VUObj (VPol Pos) (ev domRep))
+        a <- checkIn cxt SObj erasurePhase a (VUObj (VPol Pos) (ev domRep))
         b <- checkCod a
         (b, codRep) <- case force (ev codTh) of
           -- Here we try to insert a ▶ if needed.
@@ -337,18 +335,18 @@ infer cxt s = \case
       Zero -> do
         domTh <- freshPol cxt
         domRep <- freshRep cxt (ev domTh)
-        a <- checkIn cxt SObj Zero a (VUObj (ev domTh) (ev domRep))
+        a <- checkIn cxt SObj erasurePhase a (VUObj (ev domTh) (ev domRep))
         b <- checkCod a
         pure (PiObj x Zero i codRep a b, VUObj (ev codTh) (ev codRep))
   P.Let x s' q a t u -> do
     checkBinderMode cxt s' q
     a <- checkType cxt s' a
     let ~va = eval (env cxt) a
-    t <- checkIn cxt s' q t va
+    t <- checkIn cxt s' (modePhase q) t va
     let ~vt = eval (env cxt) t
     (u, b) <- infer (define cxt x s' q vt va) s u
     pure (Let x s' q a t u, b)
   P.Hole -> do
     a <- freshTypeVal cxt s
-    t <- freshMeta cxt s Omega a
+    t <- freshMeta cxt topPhase a
     pure (t, a)

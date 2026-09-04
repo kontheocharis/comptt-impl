@@ -129,13 +129,12 @@ displayMetas :: IO ()
 displayMetas = do
   ms <- readIORef mcxt
   forM_ (IM.toList ms) $ \(m, e) -> case e of
-    Unsolved mrk a -> printf "let ?%s : %s = %s?;\n" (show m) (showTm0 $ quote 0 a) (printMarker mrk)
-    Solved mrk v a -> printf "let ?%s : %s = %s%s;\n" (show m) (showTm0 $ quote 0 a) (printMarker mrk) (showTm0 $ quote 0 v)
+    Unsolved ph a -> printf "let ?%s : %s = %s?;\n" (show m) (showTm0 $ quote 0 a) (printPhase ph)
+    Solved ph v a -> printf "let ?%s : %s = %s%s;\n" (show m) (showTm0 $ quote 0 a) (printPhase ph) (showTm0 $ quote 0 v)
   putStrLn ""
   where
-    printMarker :: Marker -> String
-    printMarker Absent = ""
-    printMarker Present = "λ{#}. "
+    printPhase :: Phase -> String
+    printPhase (Phase e c) = (if e then "λ{#}. " else "") <> (if c then "λ{$}. " else "")
 
 prettyCode :: Int -> [Name] -> Code -> ShowS
 prettyCode prec = go prec

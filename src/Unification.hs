@@ -2,7 +2,7 @@ module Unification (unify) where
 
 import Common
 import Control.Exception
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Data.IORef
 import qualified Data.IntMap as IM
 import Errors
@@ -28,8 +28,8 @@ data PartialRenaming = PRen
     dom :: Lvl,
     -- | size of Δ
     cod :: Lvl,
-    -- | Whether # ∈ Γ
-    domMrk :: Marker,
+    -- | P, where P ∈ Γ
+    domPhase :: Phase,
     -- | mapping from Δ vars to Γ vars
     ren :: IM.IntMap Renamed
   }
@@ -38,18 +38,18 @@ data PartialRenaming = PRen
 -- | Lifting a partial renaming over an extra bound variable.
 --   Given (σ : PRen Γ Δ), (lift σ : PRen (Γ, i x : A[σ]) (Δ, i x : A))
 lift :: PartialRenaming -> PartialRenaming
-lift (PRen dom cod domMrk ren) =
-  PRen (dom + 1) (cod + 1) domMrk (IM.insert (unLvl cod) (RenDirect dom) ren)
+lift (PRen dom cod domPhase ren) =
+  PRen (dom + 1) (cod + 1) domPhase (IM.insert (unLvl cod) (RenDirect dom) ren)
 
--- | Lifting a partial renaming over an erasure marker variable.
---   Given (σ : PRen Γ Δ), (lift σ : PRen (Γ, #) (Δ, #))
-liftMarker :: PartialRenaming -> PartialRenaming
-liftMarker (PRen dom cod domMd ren) =
-  PRen dom cod Present ren
+-- | Lifting a partial renaming over a phase.
+--   Given (σ : PRen Γ Δ), (liftPhase P σ : PRen (Γ, P) (Δ, P))
+liftPhase :: Phase -> PartialRenaming -> PartialRenaming
+liftPhase p (PRen dom cod domPh ren) =
+  PRen dom cod (meetPhase domPh p) ren
 
--- | invert : (Γ : Cxt) → # ∈ Γ → Sub Γ Δ → PRen Δ Γ
-invert :: Lvl -> Marker -> Spine -> IO PartialRenaming
-invert gamma mrk sp = do
+-- | invert : (Γ : Cxt) → (P : Phase) → P ∈ Γ → Sub Γ Δ → PRen Δ Γ
+invert :: Lvl -> Phase -> Spine -> IO PartialRenaming
+invert gamma ph sp = do
   let bind :: Lvl -> IM.IntMap Renamed -> Lvl -> Renamed -> IO (Lvl, IM.IntMap Renamed)
       bind dom ren (Lvl x) r
         | IM.notMember x ren = pure (dom + 1, IM.insert x r ren)
@@ -74,7 +74,7 @@ invert gamma mrk sp = do
           _ -> throwIO InversionNonVariables
 
   (dom, ren) <- go sp
-  pure (PRen dom gamma mrk ren)
+  pure (PRen dom gamma ph ren)
 
 -- | rename : (m : Meta i Δ) → PRen Δ Γ → Val Γ → Tm Δ
 rename :: MetaVar -> PartialRenaming -> Val -> IO Tm
@@ -85,7 +85,7 @@ rename m pren v = go pren v
     goSp pren t (sp :> EAppObj u q i) = case q of
       Omega -> AppObj <$> goSp pren t sp <*> go pren u <*> pure q <*> pure i
       -- Every time we see a ↓, we must bind a #
-      Zero -> AppObj <$> goSp pren t sp <*> go (liftMarker pren) u <*> pure q <*> pure i
+      Zero -> AppObj <$> goSp pren t sp <*> go (liftPhase erasurePhase pren) u <*> pure q <*> pure i
     goSp pren t (sp :> EAppMeta u i) =
       AppMeta <$> goSp pren t sp <*> go pren u <*> pure i
     goSp pren t (sp :> ESplice q) = do
@@ -104,19 +104,21 @@ rename m pren v = go pren v
         when (bq == Zero && sq == Omega) (encounterU pren)
         goSp pren (quoteS sq (Var (lvl2Ix (dom pren) x'))) sp
 
+    -- Whatever phase a term needs must be entailed by the phase of Γ
+    requirePhase :: PartialRenaming -> Phase -> IO ()
+    requirePhase pren ph = unless (domPhase pren `entails` ph) (throwIO (EscapingPhase ph))
+
     -- Every time we see a ↑, we must check that # ∈ Γ
     encounterU :: PartialRenaming -> IO ()
-    encounterU pren = case (domMrk pren) of
-      Absent -> throwIO EscapingMarker
-      Present -> pure ()
+    encounterU pren = requirePhase pren erasurePhase
 
     go :: PartialRenaming -> Val -> IO Tm
     go pren t = case force t of
-      VFlex m' mrk sp
+      VFlex m' ph sp
         | m == m' -> throwIO Occurs
         | otherwise -> do
-            when (mrk == Present) (encounterU pren)
-            goSp pren (Meta m' mrk) sp
+            requirePhase pren ph
+            goSp pren (Meta m' ph) sp
       VRigidObj (Lvl x) md _ sp -> do
         when (md == Zero) (encounterU pren)
         goVar pren x sp
@@ -138,10 +140,10 @@ rename m pren v = go pren v
       VUObj th a -> do
         encounterU pren
         UObj <$> go pren th <*> go pren a
-      VLift q a -> Lift q <$> go (liftMarker pren) a
+      VLift q a -> Lift q <$> go (liftPhase erasurePhase pren) a
       VQuote q t -> case q of
         Omega -> quoteS q <$> go pren t
-        Zero -> quoteS q <$> go (liftMarker pren) t
+        Zero -> quoteS q <$> go (liftPhase erasurePhase pren) t
       VPolU -> pure PolU
       VPol p -> pure (Pol p)
       VRepU th -> RepU <$> go pren th
@@ -158,15 +160,15 @@ lams a n t = go 0 a
           _ -> error "impossible"
 
 -- (For the 'NotDowned' case:)
--- solve : (Γ : Con) → (m : Meta i Δ) -> # ∈ Δ → Sub Γ Δ → Tm Γ → TC ()
-solve :: Lvl -> MetaVar -> Marker -> Spine -> Val -> IO ()
-solve gamma m mrk sp rhs = do
+-- solve : (Γ : Con) → (m : Meta i Δ) -> (P : Phase) → P ∈ Δ → Sub Γ Δ → Tm Γ → TC ()
+solve :: Lvl -> MetaVar -> Phase -> Spine -> Val -> IO ()
+solve gamma m ph sp rhs = do
   a <- evaluate $ metaType (lookupMeta m)
-  pren <- invert gamma mrk sp
+  pren <- invert gamma ph sp
   renamed <- rename m pren rhs
   solveUniverse gamma (spineTy a sp) rhs
   let solution = eval [] $ lams a (dom pren) renamed
-  modifyIORef' mcxt $ IM.insert (unMetaVar m) (Solved mrk solution a)
+  modifyIORef' mcxt $ IM.insert (unMetaVar m) (Solved ph solution a)
 
 -- When we solve a metavariable whose applied type is an object universe, we are
 -- able to compute the representation and polarity of the solution, so that we
@@ -206,8 +208,8 @@ unify l t u = case (force t, force u) of
   (VFlex m _ sp, VFlex m' _ sp')
     | m == m' -> unifySp l sp sp'
   -- @@Todo: apply full η expansion
-  (VFlex m mrk (sp :> ESplice q), t') -> solve l m mrk sp (vQuote q t')
-  (t, VFlex m' mrk (sp' :> ESplice q)) -> solve l m' mrk sp' (vQuote q t)
+  (VFlex m ph (sp :> ESplice q), t') -> solve l m ph sp (vQuote q t')
+  (t, VFlex m' ph (sp' :> ESplice q)) -> solve l m' ph sp' (vQuote q t)
   (t, VLamObj _ q i a b) -> unify (l + 1) (vAppObj t (VVarObj l q a) q i) (b $$ VVarObj l q a)
   (t, VLamMeta _ i a b) -> unify (l + 1) (vAppMeta t (VVarMeta l a) i) (b $$ VVarMeta l a)
   (VLamObj _ q i a b, u) -> unify (l + 1) (b $$ VVarObj l q a) (vAppObj u (VVarObj l q a) q i)
@@ -233,6 +235,6 @@ unify l t u = case (force t, force u) of
     | x == x' -> unifySp l sp sp'
   (VRigidMeta x _ sp, VRigidMeta x' _ sp')
     | x == x' -> unifySp l sp sp'
-  (VFlex m mrk sp, t') -> solve l m mrk sp t'
-  (t, VFlex m' mrk sp') -> solve l m' mrk sp' t
+  (VFlex m ph sp, t') -> solve l m ph sp t'
+  (t, VFlex m' ph sp') -> solve l m' ph sp' t
   _ -> throwIO UnifyError

@@ -23,8 +23,8 @@ data Tm
   | Producer Ty
   | Ret Tm
   | Let Name Stage Mode Ty Tm Tm
-  | Meta MetaVar Marker
-  | InsertedMeta MetaVar Marker [BD]
+  | Meta MetaVar Phase
+  | InsertedMeta MetaVar Phase [BD]
   | Lift Mode Ty
   | Quote Mode Tm
   | Splice Mode Tm
